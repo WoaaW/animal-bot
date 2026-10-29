@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "animal-bot"
+version = "0.1.0"
+description = "Mudae-style Discord bot for animals"
+requires-python = ">=3.10"
+dependencies = [
+    "discord.py>=2.4",
+    "SQLAlchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
+    "python-dotenv>=1.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["bot*"]

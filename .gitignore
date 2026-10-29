@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+*.db
+*.db-journal
+.DS_Store
+*.db.bak
+*.db-wal
+*.db-shm
+.claude/settings.local.json
