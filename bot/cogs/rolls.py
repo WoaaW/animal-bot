@@ -167,13 +167,18 @@ def _fold(text: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
-def animal_embed(animal: Animal, *, full: bool) -> discord.Embed:
+def animal_header(animal: Animal) -> str:
     header = (
         f"*{animal.scientific_name}* — **{RARITY_LABEL[animal.rarity]}**"
         f" · {RARITY_POINTS[animal.rarity]} {CURRENCY_NAME}"
     )
     if animal.iucn_status:
         header += f"\nStatut UICN : {IUCN_LABEL[animal.iucn_status]} ({animal.iucn_status})"
+    return header
+
+
+def animal_embed(animal: Animal, *, full: bool) -> discord.Embed:
+    header = animal_header(animal)
     text = animal.description if full else _first_sentences(animal.description)
     description = f"{header}\n\n{text}" if text else header
     if len(description) > EMBED_DESCRIPTION_LIMIT:

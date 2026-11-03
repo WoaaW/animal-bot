@@ -11,6 +11,8 @@ class Milestone:
     # Scientific names of orders/classes; an animal belongs to the group if its
     # Animal.taxa contains any of them.
     taxa: tuple[str, ...]
+    # Shown on the profile once the prestige this milestone unlocks is reached.
+    badge: str
 
     def includes(self, animal: Animal) -> bool:
         return bool(animal.taxa) and any(f"|{taxon}|" in animal.taxa for taxon in self.taxa)
@@ -24,22 +26,29 @@ MILESTONES = [
     Milestone(
         "Invertébrés",
         ("Insecta", "Arachnida", "Malacostraca", "Merostomata", "Bivalvia", "Cephalopoda", "Gastropoda", "Hydrozoa"),
+        "🦋",
     ),
-    Milestone("Amphibiens", ("Amphibia",)),
+    Milestone("Amphibiens", ("Amphibia",), "🐸"),
     Milestone(
         "Poissons",
         ("Actinopteri", "Actinopterygii", "Chondrichthyes", "Coelacanthi", "Dipneusti",
          "Petromyzonti", "Petromyzontida", "Cephalaspidomorphi", "Myxini", "Gadiformes", "Teleostei"),
+        "🐟",
     ),
-    Milestone("Reptiles", ("Squamata", "Testudines", "Crocodilia", "Rhynchocephalia")),
-    Milestone("Oiseaux", ("Aves",)),
-    Milestone("Mammifères", ("Mammalia",)),
+    Milestone("Reptiles", ("Squamata", "Testudines", "Crocodilia", "Rhynchocephalia"), "🦎"),
+    Milestone("Oiseaux", ("Aves",), "🦅"),
+    Milestone("Mammifères", ("Mammalia",), "🦁"),
 ]
 
 
 def required_milestone(prestige_level: int) -> Milestone | None:
     """The milestone needed to go past `prestige_level`; None at the top."""
     return MILESTONES[prestige_level] if prestige_level < len(MILESTONES) else None
+
+
+def earned_badges(prestige_level: int) -> list[Milestone]:
+    """The milestones behind the prestiges a player has passed."""
+    return MILESTONES[:prestige_level]
 
 
 def progress(species: list[Animal], milestone: Milestone) -> int:

@@ -31,6 +31,11 @@ ROLL_RESET_SECONDS = 3600
 BASE_CLAIMS = 1
 CLAIM_REGEN_SECONDS = 60
 
+# A player's score, shown on their profile: each animal they own, copies included,
+# is worth its rarity's score plus its appeal's. Keys must match RARITY_ODDS and APPEAL.
+RARITY_SCORE = {"common": 1, "uncommon": 2, "rare": 5, "epic": 10, "legendary": 25, "mythic": 50}
+APPEAL_SCORE = {1: 1, 2: 2, 3: 3, 4: 5, 5: 8}
+
 # Each prestige level adds this % to the points a player earns, from rolls and
 # from the reserve. It multiplies the collection bonus rather than adding to it.
 PRESTIGE_POINTS_BONUS = 25
@@ -83,6 +88,10 @@ def roll_appeal(level: int = 0) -> int:
 def reserve_income(rarity: str, appeal: int) -> int:
     """Points per hour an animal earns in the reserve; halves round up."""
     return math.floor(RESERVE_BASE_INCOME[rarity] * APPEAL[appeal][1] + 0.5)
+
+
+def animal_score(rarity: str, appeal: int) -> int:
+    return RARITY_SCORE[rarity] + APPEAL_SCORE[appeal]
 
 
 def prestige_bonus(level: int) -> int:
