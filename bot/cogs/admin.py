@@ -73,7 +73,7 @@ class Admin(commands.Cog):
             await reset_player(session, ctx.guild.id, target.id)
             await session.commit()
         await ctx.send(
-            f"Points, rolls, claims et améliorations de {target.mention} remis à zéro, et réserve vidée "
+            f"Points, rolls, claims, échanges, prestige et améliorations de {target.mention} remis à zéro, et réserve vidée "
             "(les animaux sauvés sont gardés).",
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),

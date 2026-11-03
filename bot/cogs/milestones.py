@@ -4,7 +4,8 @@ from discord.ext import commands
 from sqlalchemy import select
 
 from ..db import SessionLocal
-from ..milestones import MILESTONES, progress
+from ..economy import get_status
+from ..milestones import MILESTONES, progress, required_milestone
 from ..models import Animal
 from ..species_collections import rescued_species
 from .rolls import RARITY_LABEL, RARITY_ORDER, _fold, paginate, send_pages
@@ -44,9 +45,10 @@ class Milestones(commands.Cog):
         async with SessionLocal() as session:
             species = await rescued_species(session, ctx.guild.id, ctx.author.id)
             animals = (await session.execute(select(Animal))).scalars().all()
+            status = await get_status(session, ctx.guild.id, ctx.author.id)
 
         if milestone is None:
-            await ctx.send(embed=self._overview(ctx.author, species, animals), ephemeral=True)
+            await ctx.send(embed=self._overview(ctx.author, species, animals, status.prestige_level), ephemeral=True)
             return
 
         # One group: every species in it, rarest first, ✓ for those rescued.
@@ -61,7 +63,9 @@ class Milestones(commands.Cog):
         await send_pages(ctx, paginate(title, lines, discord.Color.gold()), ephemeral=True)
 
     @staticmethod
-    def _overview(member: discord.abc.User, species: list[Animal], animals: list[Animal]) -> discord.Embed:
+    def _overview(member: discord.abc.User, species: list[Animal], animals: list[Animal], prestige_level: int) -> discord.Embed:
+        required = required_milestone(prestige_level)
+        next_prestige = f"Pour le prochain prestige : **{required.label}**.\n\n" if required else "\n"
         lines = []
         for milestone in MILESTONES:
             count = progress(species, milestone)
@@ -72,7 +76,8 @@ class Milestones(commands.Cog):
             title=f"Milestones de {member.display_name}",
             description=(
                 "Sauve toutes les espèces d'un groupe pour compléter son milestone. "
-                "Les espèces d'un groupe : `/milestones <groupe>`.\n\n" + "\n".join(lines)
+                "Les espèces d'un groupe : `/milestones <groupe>`.\n"
+                + next_prestige + "\n".join(lines)
             ),
             color=discord.Color.gold(),
         )

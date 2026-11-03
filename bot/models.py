@@ -97,3 +97,9 @@ class PlayerState(Base):
     # under a full point is kept in reserve_remainder, in point-seconds (/3600).
     reserve_anchor: Mapped[int] = mapped_column(default=0, server_default="0")
     reserve_remainder: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Trades used during trades_period (a day index, see economy.py), counted
+    # like rolls_used.
+    trades_used: Mapped[int] = mapped_column(default=0, server_default="0")
+    trades_period: Mapped[int] = mapped_column(default=0, server_default="0")
+    # How many times the player prestiged; also picks the next required milestone.
+    prestige_level: Mapped[int] = mapped_column(default=0, server_default="0")

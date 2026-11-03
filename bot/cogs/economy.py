@@ -94,7 +94,7 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
 
     embed = discord.Embed(
         title="Boutique",
-        description=f"Tu as **{status.points}** {CURRENCY_NAME}. Chaque amélioration est permanente.",
+        description=f"Tu as **{status.points}** {CURRENCY_NAME}. Tes améliorations durent jusqu'à ton prochain `/prestige`.",
         color=discord.Color.gold(),
     )
     # upgrade -> (field name, field value). A maxed upgrade shows where the
@@ -250,11 +250,12 @@ class Economy(commands.Cog):
             + (f" (dont +{reserve.bonus} % de collections)" if reserve.bonus else "")
             + ", "
             f"**{reserve.pending}** en attente dans `/reserve`.\n"
-            f"Niveau de chance : **{status.luck_level}** · niveau d'attrait : **{status.appeal_level}**",
+            f"Niveau de chance : **{status.luck_level}** · niveau d'attrait : **{status.appeal_level}**\n"
+            f"Échanges restants aujourd'hui : **{status.trades_left}** · prestige : **{status.prestige_level}**",
             ephemeral=True,
         )
 
-    @commands.hybrid_command(name="shop", description=f"Dépense tes {CURRENCY_NAME} en améliorations permanentes.")
+    @commands.hybrid_command(name="shop", description=f"Dépense tes {CURRENCY_NAME} en améliorations.")
     async def shop(self, ctx: commands.Context):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)

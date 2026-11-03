@@ -16,24 +16,30 @@ class Milestone:
         return bool(animal.taxa) and any(f"|{taxon}|" in animal.taxa for taxon in self.taxa)
 
 
-# Every animal of the pool must fall in exactly one group. Fish and reptiles
+# Every animal of the pool must fall in exactly one group. The order is also the
+# prestige order: level N requires MILESTONES[N], smallest group first. Fish and reptiles
 # have no usable class: Wikidata splits fish into several classes (Gadiformes
 # has none at all) and nests birds inside Reptilia, so reptiles go by order.
 MILESTONES = [
-    Milestone("Mammifères", ("Mammalia",)),
-    Milestone("Oiseaux", ("Aves",)),
-    Milestone("Reptiles", ("Squamata", "Testudines", "Crocodilia", "Rhynchocephalia")),
+    Milestone(
+        "Invertébrés",
+        ("Insecta", "Arachnida", "Malacostraca", "Merostomata", "Bivalvia", "Cephalopoda", "Gastropoda", "Hydrozoa"),
+    ),
     Milestone("Amphibiens", ("Amphibia",)),
     Milestone(
         "Poissons",
         ("Actinopteri", "Actinopterygii", "Chondrichthyes", "Coelacanthi", "Dipneusti",
          "Petromyzonti", "Petromyzontida", "Cephalaspidomorphi", "Myxini", "Gadiformes", "Teleostei"),
     ),
-    Milestone(
-        "Invertébrés",
-        ("Insecta", "Arachnida", "Malacostraca", "Merostomata", "Bivalvia", "Cephalopoda", "Gastropoda", "Hydrozoa"),
-    ),
+    Milestone("Reptiles", ("Squamata", "Testudines", "Crocodilia", "Rhynchocephalia")),
+    Milestone("Oiseaux", ("Aves",)),
+    Milestone("Mammifères", ("Mammalia",)),
 ]
+
+
+def required_milestone(prestige_level: int) -> Milestone | None:
+    """The milestone needed to go past `prestige_level`; None at the top."""
+    return MILESTONES[prestige_level] if prestige_level < len(MILESTONES) else None
 
 
 def progress(species: list[Animal], milestone: Milestone) -> int:

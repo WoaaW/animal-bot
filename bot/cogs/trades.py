@@ -3,19 +3,24 @@ from discord import app_commands
 from discord.ext import commands
 
 from ..db import SessionLocal
-from ..economy import CURRENCY_NAME, TradeResult, TradeSide, collect_reserve, execute_trade, get_status
+from ..economy import (
+    MAX_TRADES_PER_DAY,
+    TradeResult,
+    TradeSide,
+    execute_trade,
+    get_status,
+    seconds_until_trade_reset,
+)
 from ..models import Animal, Rescue
 from .reserve import _choices, _income, _label, _rescues
-from .rolls import _fold
+from .rolls import _fold, format_wait
 
 TRADE_TIMEOUT_SECONDS = 300
 
 
 class TradeOffer(commands.FlagConverter):
     give_animal: str | None = commands.flag(default=None, description="L'animal que tu donnes")
-    give_points: commands.Range[int, 1] = commands.flag(default=None, description=f"Les {CURRENCY_NAME} que tu donnes")
     want_animal: str | None = commands.flag(default=None, description="L'animal que tu demandes")
-    want_points: commands.Range[int, 1] = commands.flag(default=None, description=f"Les {CURRENCY_NAME} que tu demandes")
 
 
 def _pick_copy(rows: list[tuple[Rescue, Animal]], query: str) -> tuple[Rescue, Animal] | None:
@@ -28,13 +33,8 @@ def _pick_copy(rows: list[tuple[Rescue, Animal]], query: str) -> tuple[Rescue, A
     return min(matches, key=lambda row: (row[0].in_reserve, _income(row))) if matches else None
 
 
-def _describe(row: tuple[Rescue, Animal] | None, points: int) -> str:
-    parts = []
-    if row is not None:
-        parts.append(f"**{_label(row)}**")
-    if points:
-        parts.append(f"**{points}** {CURRENCY_NAME}")
-    return "\n".join(parts) or "Rien"
+def _describe(row: tuple[Rescue, Animal] | None) -> str:
+    return f"**{_label(row)}**" if row is not None else "Rien"
 
 
 class TradeView(discord.ui.View):
@@ -73,8 +73,11 @@ class TradeView(discord.ui.View):
         who = f"<@{result.failed_user_id}>"
         if result.failure == "reserve":
             return f"Échange impossible : l'animal de {who} est dans sa réserve (`/reserve remove`). L'offre reste ouverte."
-        if result.failure == "points":
-            return f"Échange impossible : {who} n'a pas assez de {CURRENCY_NAME}. L'offre reste ouverte."
+        if result.failure == "limit":
+            return (
+                f"Échange impossible : {who} a déjà fait ses {MAX_TRADES_PER_DAY} échanges du jour "
+                f"(recharge dans {format_wait(seconds_until_trade_reset())}). L'offre reste ouverte."
+            )
         return f"Échange annulé : l'animal de {who} ne lui appartient plus."
 
     @discord.ui.button(label="Accepter", style=discord.ButtonStyle.success)
@@ -97,7 +100,9 @@ class TradeView(discord.ui.View):
             self.settled = result.failure == "moved"
             if self.settled:
                 self._close()
-                await interaction.response.edit_message(content=self._failure_text(result), view=self)
+                await interaction.response.edit_message(
+                    content=self._failure_text(result), view=self, allowed_mentions=discord.AllowedMentions.none()
+                )
             else:
                 await interaction.response.send_message(
                     self._failure_text(result), ephemeral=True, allowed_mentions=discord.AllowedMentions.none()
@@ -140,9 +145,10 @@ class Trades(commands.Cog):
 
     @commands.hybrid_command(
         name="trade",
-        description=f"Propose un échange d'animaux et de {CURRENCY_NAME}, ou un cadeau, à un autre joueur.",
+        description="Propose un échange d'animaux, ou un cadeau, à un autre joueur.",
     )
     @app_commands.describe(member="Le joueur avec qui échanger")
+    @app_commands.guild_only()
     async def trade(self, ctx: commands.Context, member: discord.Member, *, offer: TradeOffer):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
@@ -150,15 +156,25 @@ class Trades(commands.Cog):
         if member.bot or member.id == ctx.author.id:
             await ctx.send("Choisis un autre joueur.", ephemeral=True)
             return
-        give_points = offer.give_points or 0
-        want_points = offer.want_points or 0
-        if not (offer.give_animal or give_points or offer.want_animal or want_points):
+        if not (offer.give_animal or offer.want_animal):
             await ctx.send(
-                "Indique ce que tu donnes ou demandes : `give_animal`, `give_points`, `want_animal`, `want_points`.",
+                "Indique ce que tu donnes ou demandes : `give_animal`, `want_animal`.",
                 ephemeral=True,
             )
             return
         await ctx.defer()
+
+        async with SessionLocal() as session:
+            author_status = await get_status(session, ctx.guild.id, ctx.author.id)
+            member_status = await get_status(session, ctx.guild.id, member.id)
+        if author_status.trades_left <= 0 or member_status.trades_left <= 0:
+            who = "Tu as" if author_status.trades_left <= 0 else f"{member.mention} a"
+            await ctx.send(
+                f"{who} déjà fait {MAX_TRADES_PER_DAY} échanges aujourd'hui "
+                f"(recharge dans {format_wait(seconds_until_trade_reset())}).",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
 
         given = wanted = None
         if offer.give_animal:
@@ -183,26 +199,17 @@ class Trades(commands.Cog):
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
                 return
-        if give_points:
-            # What the reserve earned counts toward what can be offered.
-            async with SessionLocal() as session:
-                await collect_reserve(session, ctx.guild.id, ctx.author.id)
-                await session.commit()
-                status = await get_status(session, ctx.guild.id, ctx.author.id)
-            if status.points < give_points:
-                await ctx.send(f"Tu n'as que **{status.points}** {CURRENCY_NAME}.")
-                return
 
         embed = discord.Embed(title="Offre d'échange", color=discord.Color.teal())
-        embed.add_field(name=f"{ctx.author.display_name} donne", value=_describe(given, give_points))
-        embed.add_field(name=f"{member.display_name} donne", value=_describe(wanted, want_points))
+        embed.add_field(name=f"{ctx.author.display_name} donne", value=_describe(given))
+        embed.add_field(name=f"{member.display_name} donne", value=_describe(wanted))
         embed.set_footer(text="Céder le dernier exemplaire d'une espèce peut faire perdre une collection ou un milestone.")
         view = TradeView(
             ctx.guild.id,
             ctx.author,
             member,
-            TradeSide(ctx.author.id, given[0].id if given else None, give_points),
-            TradeSide(member.id, wanted[0].id if wanted else None, want_points),
+            TradeSide(ctx.author.id, given[0].id if given else None),
+            TradeSide(member.id, wanted[0].id if wanted else None),
         )
         view.message = await ctx.send(
             member.mention,

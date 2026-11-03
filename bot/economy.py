@@ -31,6 +31,11 @@ ROLL_RESET_SECONDS = 3600
 BASE_CLAIMS = 1
 CLAIM_REGEN_SECONDS = 60
 
+# Accepted trades per player per day, gifts included. Days are fixed clock slots
+# (midnight UTC), the same for everyone, like roll windows.
+MAX_TRADES_PER_DAY = 3
+TRADE_RESET_SECONDS = 24 * 3600
+
 # The reserve: rescued animals put on show earn points per hour while the
 # player is away: a base by rarity (keys must match RARITY_ODDS) times a
 # multiplier for their appeal, a 1-5 star stat rolled with each roll.
@@ -47,7 +52,7 @@ BASE_RESERVE_SLOTS = 1
 RESERVE_CAP_SECONDS = 12 * 3600
 
 # Shop upgrades: (PlayerState column holding the level, price of level 0 → 1,
-# price growth per level, max level or None). Every upgrade is permanent and
+# price growth per level, max level or None). Every upgrade lasts until the next prestige and
 # pricier each time. Caps are written as totals minus the default, so the
 # total stays the same if a default changes.
 UPGRADES = {
@@ -108,6 +113,8 @@ class PlayerStatus:
     max_reserve: int
     # Seconds until the next claim comes back; 0 when the stock is full.
     next_claim_in: int
+    trades_left: int
+    prestige_level: int
 
 
 def _current_period() -> int:
@@ -116,6 +123,14 @@ def _current_period() -> int:
 
 def seconds_until_reset() -> int:
     return int(ROLL_RESET_SECONDS - time.time() % ROLL_RESET_SECONDS)
+
+
+def _current_trade_period() -> int:
+    return int(time.time() // TRADE_RESET_SECONDS)
+
+
+def seconds_until_trade_reset() -> int:
+    return int(TRADE_RESET_SECONDS - time.time() % TRADE_RESET_SECONDS)
 
 
 def _status(state: PlayerState) -> PlayerStatus:
@@ -141,6 +156,8 @@ def _status(state: PlayerState) -> PlayerStatus:
         reserve_slots=state.reserve_slots,
         max_reserve=BASE_RESERVE_SLOTS + state.reserve_slots,
         next_claim_in=next_claim_in,
+        trades_left=MAX_TRADES_PER_DAY - (state.trades_used if state.trades_period == _current_trade_period() else 0),
+        prestige_level=state.prestige_level,
     )
 
 
@@ -241,7 +258,7 @@ async def give_bonus(session: AsyncSession, guild_id: int, user_id: int, *, roll
 
 
 async def reset_player(session: AsyncSession, guild_id: int, user_id: int) -> None:
-    """Wipe a player's points, counters and upgrades (not their rescues).
+    """Wipe a player's points, counters, upgrades and prestige (not their rescues).
     Their reserve is emptied too, since its extra slots are gone. Doesn't commit."""
     await session.execute(delete(PlayerState).where(*_player(guild_id, user_id)))
     await session.execute(
@@ -279,7 +296,7 @@ async def get_status(session: AsyncSession, guild_id: int, user_id: int) -> Play
     return _status(state or PlayerState(
         guild_id=guild_id, user_id=user_id, points=0, peak_points=0, rolls_used=0, rolls_period=0,
         claims_anchor=0, bonus_rolls=0, bonus_claims=0, extra_rolls=0, luck_level=0, claim_slots=0,
-        reserve_slots=0, appeal_level=0,
+        reserve_slots=0, appeal_level=0, trades_used=0, trades_period=0, prestige_level=0,
     ))
 
 
@@ -411,14 +428,13 @@ class TradeSide:
     """What one player hands over in a trade."""
     user_id: int
     rescue_id: int | None = None
-    points: int = 0
 
 
 @dataclass
 class TradeResult:
     # None on success, else why it failed ("reserve": the animal is in its
-    # owner's reserve, "moved": it isn't theirs anymore, "points": balance too
-    # low) and whose side failed. The caller must not commit a failed trade.
+    # owner's reserve, "moved": it isn't theirs anymore, "limit": no trade left
+    # today) and whose side failed. The caller must not commit a failed trade.
     failure: str | None = None
     failed_user_id: int | None = None
     # user id → collections gained or lost by this trade.
@@ -445,6 +461,17 @@ async def _give_rescue(session: AsyncSession, guild_id: int, rescue_id: int, fro
     return "reserve" if in_reserve else "moved"
 
 
+async def _consume_trade(session: AsyncSession, guild_id: int, user_id: int) -> bool:
+    """Use one of today's trades; False if none left. Doesn't commit."""
+    period = _current_trade_period()
+    return await _update_player(
+        session, guild_id, user_id,
+        or_(PlayerState.trades_period != period, PlayerState.trades_used < MAX_TRADES_PER_DAY),
+        trades_used=case((PlayerState.trades_period == period, PlayerState.trades_used + 1), else_=1),
+        trades_period=period,
+    ) is not None
+
+
 async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: TradeSide) -> TradeResult:
     """Swap what each side hands over, all or nothing. Doesn't commit: commit
     only if `failure` is None, closing the session otherwise rolls it all back."""
@@ -456,22 +483,14 @@ async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: T
         await collect_reserve(session, guild_id, side.user_id)
         species_before[side.user_id] = await rescued_species(session, guild_id, side.user_id)
 
+    for side in (a, b):
+        if not await _consume_trade(session, guild_id, side.user_id):
+            return TradeResult(failure="limit", failed_user_id=side.user_id)
     for side, other in ((a, b), (b, a)):
         if side.rescue_id is not None:
             reason = await _give_rescue(session, guild_id, side.rescue_id, side.user_id, other.user_id)
             if reason:
                 return TradeResult(failure=reason, failed_user_id=side.user_id)
-    # Every debit before any credit: points received can't fund the other side.
-    for side in (a, b):
-        if side.points and await _update_player(
-            session, guild_id, side.user_id,
-            PlayerState.points >= side.points,
-            points=PlayerState.points - side.points,
-        ) is None:
-            return TradeResult(failure="points", failed_user_id=side.user_id)
-    for side, other in ((a, b), (b, a)):
-        if side.points:
-            await add_points(session, guild_id, other.user_id, side.points)
 
     result = TradeResult()
     pool = (await session.execute(select(Animal))).scalars().all()
@@ -486,3 +505,36 @@ async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: T
         result.milestones_unlocked[side.user_id] = [x for x in reached_after if x not in reached_before]
         result.milestones_lost[side.user_id] = [x for x in reached_before if x not in reached_after]
     return result
+
+
+async def prestige(session: AsyncSession, guild_id: int, user_id: int, from_level: int) -> PlayerStatus | None:
+    """Move up one prestige level: wipes points, upgrades, the reserve and every
+    animal. Keeps bonus rolls/claims, wishes and the roll, claim and trade
+    counters. None if the required milestone isn't complete or the player isn't
+    at `from_level` anymore (e.g. a double click). Doesn't commit."""
+    milestone = milestones.required_milestone(from_level)
+    if milestone is None:
+        return None
+    await _ensure_player(session, guild_id, user_id)
+    species = await rescued_species(session, guild_id, user_id)
+    pool = (await session.execute(select(Animal))).scalars().all()
+    if milestone not in milestones.completed(species, pool):
+        return None
+    status = await _update_player(
+        session, guild_id, user_id,
+        PlayerState.prestige_level == from_level,
+        prestige_level=from_level + 1,
+        points=0,
+        peak_points=0,
+        extra_rolls=0,
+        luck_level=0,
+        claim_slots=0,
+        reserve_slots=0,
+        appeal_level=0,
+        reserve_anchor=0,
+        reserve_remainder=0,
+    )
+    if status is None:
+        return None
+    await session.execute(delete(Rescue).where(Rescue.guild_id == guild_id, Rescue.user_id == user_id))
+    return status
