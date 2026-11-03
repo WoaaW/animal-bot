@@ -31,6 +31,10 @@ ROLL_RESET_SECONDS = 3600
 BASE_CLAIMS = 1
 CLAIM_REGEN_SECONDS = 60
 
+# Each prestige level adds this % to the points a player earns, from rolls and
+# from the reserve. It multiplies the collection bonus rather than adding to it.
+PRESTIGE_POINTS_BONUS = 25
+
 # Accepted trades per player per day, gifts included. Days are fixed clock slots
 # (midnight UTC), the same for everyone, like roll windows.
 MAX_TRADES_PER_DAY = 3
@@ -79,6 +83,16 @@ def roll_appeal(level: int = 0) -> int:
 def reserve_income(rarity: str, appeal: int) -> int:
     """Points per hour an animal earns in the reserve; halves round up."""
     return math.floor(RESERVE_BASE_INCOME[rarity] * APPEAL[appeal][1] + 0.5)
+
+
+def prestige_bonus(level: int) -> int:
+    """Extra points in % at a prestige level."""
+    return PRESTIGE_POINTS_BONUS * level
+
+
+def prestige_points(amount: int, level: int) -> int:
+    """`amount` points with the prestige bonus; halves round up."""
+    return math.floor(amount * (100 + prestige_bonus(level)) / 100 + 0.5)
 
 
 def upgrade_price(upgrade: str, level: int) -> int:
@@ -302,19 +316,20 @@ async def get_status(session: AsyncSession, guild_id: int, user_id: int) -> Play
 
 @dataclass
 class ReserveStatus:
-    rate: float      # points per hour, all animals in the reserve together, bonus included
+    rate: float      # points per hour, all animals in the reserve together, bonuses included
     bonus: int       # % added by completed collections
+    prestige: int    # % added by prestige
     pending: int     # points waiting to be collected
     used: int
     max_slots: int
 
 
-def _reserve_earnings(base: int, bonus: int, anchor: int, remainder: int, now: int) -> tuple[int, int]:
+def _reserve_earnings(base: int, bonus: int, prestige_pct: int, anchor: int, remainder: int, now: int) -> tuple[int, int]:
     """(points earned since anchor, leftover point-seconds). Counting in
     point-seconds keeps the fraction of a point between collections, and
     applying the bonus % there (not to the hourly rate) keeps a small bonus
     on a small reserve from rounding away."""
-    earned = base * (100 + bonus) * min(now - anchor, RESERVE_CAP_SECONDS) // 100 + remainder
+    earned = base * (100 + bonus) * (100 + prestige_pct) * min(now - anchor, RESERVE_CAP_SECONDS) // 10000 + remainder
     return divmod(earned, 3600)
 
 
@@ -348,13 +363,21 @@ async def get_reserve_status(session: AsyncSession, guild_id: int, user_id: int)
     base, bonus, used = await _reserve_rate(session, guild_id, user_id)
     row = (
         await session.execute(
-            select(PlayerState.reserve_anchor, PlayerState.reserve_remainder, PlayerState.reserve_slots)
+            select(PlayerState.reserve_anchor, PlayerState.reserve_remainder, PlayerState.reserve_slots, PlayerState.prestige_level)
             .where(*_player(guild_id, user_id))
         )
     ).one_or_none()
-    anchor, remainder, slots = row or (0, 0, 0)
-    pending, _ = _reserve_earnings(base, bonus, anchor, remainder, int(time.time()))
-    return ReserveStatus(rate=base * (100 + bonus) / 100, bonus=bonus, pending=pending, used=used, max_slots=BASE_RESERVE_SLOTS + slots)
+    anchor, remainder, slots, level = row or (0, 0, 0, 0)
+    prestige_pct = prestige_bonus(level)
+    pending, _ = _reserve_earnings(base, bonus, prestige_pct, anchor, remainder, int(time.time()))
+    return ReserveStatus(
+        rate=base * (100 + bonus) * (100 + prestige_pct) / 10000,
+        bonus=bonus,
+        prestige=prestige_pct,
+        pending=pending,
+        used=used,
+        max_slots=BASE_RESERVE_SLOTS + slots,
+    )
 
 
 async def collect_reserve(session: AsyncSession, guild_id: int, user_id: int) -> int:
@@ -366,12 +389,13 @@ async def collect_reserve(session: AsyncSession, guild_id: int, user_id: int) ->
     now = int(time.time())
     await _ensure_player(session, guild_id, user_id)
     base, bonus, _ = await _reserve_rate(session, guild_id, user_id)
-    anchor, remainder = (
+    anchor, remainder, level = (
         await session.execute(
-            select(PlayerState.reserve_anchor, PlayerState.reserve_remainder).where(*_player(guild_id, user_id))
+            select(PlayerState.reserve_anchor, PlayerState.reserve_remainder, PlayerState.prestige_level)
+            .where(*_player(guild_id, user_id))
         )
     ).one()
-    paid, remainder_left = _reserve_earnings(base, bonus, anchor, remainder, now)
+    paid, remainder_left = _reserve_earnings(base, bonus, prestige_bonus(level), anchor, remainder, now)
     # Only applies if nobody collected in between (same idea as buy_upgrade's
     # from_level): a concurrent collection already paid this time.
     status = await _update_player(
@@ -508,9 +532,10 @@ async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: T
 
 
 async def prestige(session: AsyncSession, guild_id: int, user_id: int, from_level: int) -> PlayerStatus | None:
-    """Move up one prestige level: wipes points, upgrades, the reserve and every
-    animal. Keeps bonus rolls/claims, wishes and the roll, claim and trade
-    counters. None if the required milestone isn't complete or the player isn't
+    """Move up one prestige level: wipes points, upgrades (except reserve places)
+    and every animal outside the reserve. Keeps the reserve, bonus rolls/claims,
+    wishes and the roll, claim and trade counters. Income not collected yet is
+    lost, and the kept animals start earning from now. None if the required milestone isn't complete or the player isn't
     at `from_level` anymore (e.g. a double click). Doesn't commit."""
     milestone = milestones.required_milestone(from_level)
     if milestone is None:
@@ -529,12 +554,13 @@ async def prestige(session: AsyncSession, guild_id: int, user_id: int, from_leve
         extra_rolls=0,
         luck_level=0,
         claim_slots=0,
-        reserve_slots=0,
         appeal_level=0,
-        reserve_anchor=0,
+        reserve_anchor=int(time.time()),
         reserve_remainder=0,
     )
     if status is None:
         return None
-    await session.execute(delete(Rescue).where(Rescue.guild_id == guild_id, Rescue.user_id == user_id))
+    await session.execute(
+        delete(Rescue).where(Rescue.guild_id == guild_id, Rescue.user_id == user_id, ~Rescue.in_reserve)
+    )
     return status

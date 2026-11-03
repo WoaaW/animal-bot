@@ -14,7 +14,7 @@ from ..economy import (
     reserve_income,
 )
 from ..models import Animal, Rescue
-from .rolls import _fold, format_appeal, format_rate, format_wait, paginate, send_pages
+from .rolls import _fold, format_appeal, format_rate, format_reserve_bonus, format_wait, paginate, send_pages
 
 
 async def _rescues(guild_id: int, user_id: int) -> list[tuple[Rescue, Animal]]:
@@ -90,8 +90,7 @@ class Reserve(commands.Cog):
         if not lines:
             lines = ["Vide ! Expose tes animaux sauvés avec `/reserve add`."]
         title = f"Réserve de {ctx.author.display_name} ({status.used}/{status.max_slots}) · {format_rate(status.rate)} {CURRENCY_NAME}/h"
-        if status.bonus:
-            title += f" (dont +{status.bonus} % de collections)"
+        title += format_reserve_bonus(status)
         pages = paginate(title, lines, discord.Color.dark_green())
         for page in pages:
             page.add_field(

@@ -17,11 +17,13 @@ from ..economy import (
     CURRENCY_NAME,
     RARITY_POINTS,
     RESERVE_BASE_INCOME,
+    ReserveStatus,
     add_points,
     collect_reserve,
     consume_claim,
     consume_roll,
     get_status,
+    prestige_points,
     reserve_income,
     roll_appeal,
     seconds_until_reset,
@@ -143,6 +145,16 @@ def rarity_initials(rarity: str) -> str:
 def format_rate(rate: float) -> str:
     # Points per hour: "45", or "6,2" when an collection bonus adds a fraction.
     return f"{rate:.0f}" if rate == int(rate) else f"{rate:.1f}".replace(".", ",")
+
+
+def format_reserve_bonus(status: ReserveStatus) -> str:
+    # " (dont +9 % de collections, +25 % de prestige)", or nothing without bonus.
+    parts = []
+    if status.bonus:
+        parts.append(f"+{status.bonus} % de collections")
+    if status.prestige:
+        parts.append(f"+{status.prestige} % de prestige")
+    return f" (dont {', '.join(parts)})" if parts else ""
 
 
 def format_appeal(appeal: int) -> str:
@@ -421,7 +433,7 @@ class Rolls(commands.Cog):
                 animal = _weighted_pick(animals, rarity_odds(status.luck_level))
                 # Every roll pays its rarity's points, in the same transaction
                 # as the roll it was spent on.
-                points = RARITY_POINTS[animal.rarity]
+                points = prestige_points(RARITY_POINTS[animal.rarity], status.prestige_level)
                 await add_points(session, ctx.guild.id, ctx.author.id, points)
             await session.commit()
             if status is not None:

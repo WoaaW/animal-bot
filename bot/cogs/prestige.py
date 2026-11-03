@@ -3,7 +3,7 @@ from discord.ext import commands
 from sqlalchemy import select
 
 from ..db import SessionLocal
-from ..economy import CURRENCY_NAME, get_status, prestige
+from ..economy import CURRENCY_NAME, get_status, prestige, prestige_bonus
 from ..milestones import MILESTONES, completed, progress, required_milestone
 from ..models import Animal
 from ..species_collections import rescued_species
@@ -52,7 +52,8 @@ class PrestigeView(discord.ui.View):
             return
         await interaction.response.edit_message(content="Prestige effectué.", view=self)
         await interaction.followup.send(
-            f"{interaction.user.mention} passe au prestige **{status.prestige_level}** !",
+            f"{interaction.user.mention} passe au prestige **{status.prestige_level}** ! "
+            f"(+{prestige_bonus(status.prestige_level)} % de {CURRENCY_NAME})",
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
@@ -98,7 +99,8 @@ class Prestige(commands.Cog):
         total = sum(milestone.includes(a) for a in animals)
         ready = milestone in completed(species, animals)
         text = (
-            f"Prestige actuel : **{level}**\n"
+            f"Prestige actuel : **{level}** (+{prestige_bonus(level)} % de {CURRENCY_NAME})\n"
+            f"Au niveau suivant : +{prestige_bonus(level + 1)} % de {CURRENCY_NAME}\n"
             f"Milestone demandé : **{milestone.label}**\n"
             f"{_bar(progress(species, milestone), total)}\n\n"
         )
@@ -110,7 +112,8 @@ class Prestige(commands.Cog):
             return
         view = PrestigeView(ctx.guild.id, ctx.author.id, level)
         view.message = await ctx.send(
-            text + f"**Attention :** tu perdras tes {CURRENCY_NAME}, tes améliorations, ta réserve et **tous tes animaux**. "
+            text + f"**Attention :** tu perdras tes {CURRENCY_NAME}, ce que ta réserve n'a pas encore encaissé, "
+            "tes améliorations et **tous tes animaux hors de ta réserve**. Ta réserve et ses places sont conservées. "
             "Cette action est définitive.",
             view=view,
             ephemeral=True,

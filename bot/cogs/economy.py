@@ -12,11 +12,12 @@ from ..economy import (
     get_reserve_status,
     get_status,
     seconds_until_reset,
+    prestige_bonus,
     upgrade_max_level,
     upgrade_maxed,
     upgrade_price,
 )
-from .rolls import RARITY_LABEL, RARITY_UNLOCK_LEVEL, format_rate, format_wait, rarity_odds
+from .rolls import RARITY_LABEL, RARITY_UNLOCK_LEVEL, format_rate, format_reserve_bonus, format_wait, rarity_odds
 
 # The top tier stays a surprise until a player unlocks it.
 HIDDEN_TIER = "mythic"
@@ -94,7 +95,7 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
 
     embed = discord.Embed(
         title="Boutique",
-        description=f"Tu as **{status.points}** {CURRENCY_NAME}. Tes améliorations durent jusqu'à ton prochain `/prestige`.",
+        description=f"Tu as **{status.points}** {CURRENCY_NAME}. Tes améliorations durent jusqu'à ton prochain `/prestige`, sauf les places de réserve.",
         color=discord.Color.gold(),
     )
     # upgrade -> (field name, field value). A maxed upgrade shows where the
@@ -247,11 +248,12 @@ class Economy(commands.Cog):
             + f" (recharge dans {format_wait(seconds_until_reset())}).\n"
             f"{claims}\n"
             f"Réserve : **{reserve.used}/{reserve.max_slots}** animaux, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"
-            + (f" (dont +{reserve.bonus} % de collections)" if reserve.bonus else "")
+            + format_reserve_bonus(reserve)
             + ", "
             f"**{reserve.pending}** en attente dans `/reserve`.\n"
             f"Niveau de chance : **{status.luck_level}** · niveau d'attrait : **{status.appeal_level}**\n"
-            f"Échanges restants aujourd'hui : **{status.trades_left}** · prestige : **{status.prestige_level}**",
+            f"Échanges restants aujourd'hui : **{status.trades_left}** · prestige : **{status.prestige_level}**"
+            + (f" (+{prestige_bonus(status.prestige_level)} % de {CURRENCY_NAME})" if status.prestige_level else ""),
             ephemeral=True,
         )
 
