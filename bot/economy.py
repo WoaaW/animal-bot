@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from .species_collections import Collection, completed, rescued_species, total_bonus
+from . import milestones
+from .milestones import Milestone
 from .models import Animal, PlayerState, Rescue
 
 # Display name of the currency — the only place to change when it gets renamed.
@@ -422,6 +424,8 @@ class TradeResult:
     # user id → collections gained or lost by this trade.
     unlocked: dict[int, list[Collection]] = field(default_factory=dict)
     lost: dict[int, list[Collection]] = field(default_factory=dict)
+    milestones_unlocked: dict[int, list[Milestone]] = field(default_factory=dict)
+    milestones_lost: dict[int, list[Milestone]] = field(default_factory=dict)
 
 
 async def _give_rescue(session: AsyncSession, guild_id: int, rescue_id: int, from_id: int, to_id: int) -> str | None:
@@ -470,9 +474,15 @@ async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: T
             await add_points(session, guild_id, other.user_id, side.points)
 
     result = TradeResult()
+    pool = (await session.execute(select(Animal))).scalars().all()
     for side in (a, b):
+        species_after = await rescued_species(session, guild_id, side.user_id)
         done_before = completed(species_before[side.user_id])
-        done_after = completed(await rescued_species(session, guild_id, side.user_id))
+        done_after = completed(species_after)
         result.unlocked[side.user_id] = [x for x in done_after if x not in done_before]
         result.lost[side.user_id] = [x for x in done_before if x not in done_after]
+        reached_before = milestones.completed(species_before[side.user_id], pool)
+        reached_after = milestones.completed(species_after, pool)
+        result.milestones_unlocked[side.user_id] = [x for x in reached_after if x not in reached_before]
+        result.milestones_lost[side.user_id] = [x for x in reached_before if x not in reached_after]
     return result

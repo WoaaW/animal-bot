@@ -9,6 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 from sqlalchemy import select
 
+from .. import milestones
 from ..species_collections import COLLECTION_TARGET, COLLECTIONS, completed, progress, rescued_species
 from ..db import SessionLocal
 from ..economy import (
@@ -228,6 +229,7 @@ class RescueView(discord.ui.View):
             # income: pay what was earned at the old rate first.
             await collect_reserve(session, self.guild_id, interaction.user.id)
             before = await rescued_species(session, self.guild_id, interaction.user.id)
+            pool = (await session.execute(select(Animal))).scalars().all()
             session.add(
                 Rescue(
                     guild_id=self.guild_id,
@@ -240,9 +242,12 @@ class RescueView(discord.ui.View):
         # A duplicate adds no species, so it can't complete anything.
         if any(a.id == self.animal.id for a in before):
             unlocked = []
+            reached = []
         else:
             done_before = completed(before)
             unlocked = [a for a in completed([*before, self.animal]) if a not in done_before]
+            reached_before = milestones.completed(before, pool)
+            reached = [m for m in milestones.completed([*before, self.animal], pool) if m not in reached_before]
 
         button.disabled = True
         button.label = f"Sauvetage par {interaction.user.display_name}"
@@ -255,6 +260,8 @@ class RescueView(discord.ui.View):
         )
         for collection in unlocked:
             message += f"\nCollection complétée : **{collection.label}** (+{collection.bonus} % de revenu de réserve)"
+        for milestone in reached:
+            message += f"\nMilestone complété : **{milestone.label}** !"
         await interaction.followup.send(message, allowed_mentions=discord.AllowedMentions.none())
 
     @discord.ui.button(label="En savoir plus", style=discord.ButtonStyle.secondary)

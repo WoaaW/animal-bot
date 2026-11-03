@@ -63,6 +63,10 @@ class TradeView(discord.ui.View):
                 message += f"\n{member.mention} complète la collection **{collection.label}** (+{collection.bonus} % de revenu de réserve)"
             for collection in result.lost[member.id]:
                 message += f"\n{member.mention} perd la collection **{collection.label}** (-{collection.bonus} % de revenu de réserve)"
+            for milestone in result.milestones_unlocked[member.id]:
+                message += f"\n{member.mention} complète le milestone **{milestone.label}** !"
+            for milestone in result.milestones_lost[member.id]:
+                message += f"\n{member.mention} perd le milestone **{milestone.label}**"
         return message
 
     def _failure_text(self, result: TradeResult) -> str:
@@ -192,7 +196,7 @@ class Trades(commands.Cog):
         embed = discord.Embed(title="Offre d'échange", color=discord.Color.teal())
         embed.add_field(name=f"{ctx.author.display_name} donne", value=_describe(given, give_points))
         embed.add_field(name=f"{member.display_name} donne", value=_describe(wanted, want_points))
-        embed.set_footer(text="Céder le dernier exemplaire d'une espèce peut faire perdre une collection.")
+        embed.set_footer(text="Céder le dernier exemplaire d'une espèce peut faire perdre une collection ou un milestone.")
         view = TradeView(
             ctx.guild.id,
             ctx.author,

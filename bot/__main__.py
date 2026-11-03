@@ -50,6 +50,7 @@ async def main():
         await bot.load_extension("bot.cogs.economy")
         await bot.load_extension("bot.cogs.reserve")
         await bot.load_extension("bot.cogs.species_collections")
+        await bot.load_extension("bot.cogs.milestones")
         await bot.load_extension("bot.cogs.wishes")
         await bot.load_extension("bot.cogs.trades")
         await bot.load_extension("bot.cogs.help")
