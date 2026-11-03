@@ -476,6 +476,9 @@ class Rolls(commands.Cog):
             return
 
         embed = animal_embed(animal, full=False)
+        milestone = milestones.milestone_of(animal)
+        if milestone is not None:
+            embed.title = f"{milestone.badge} {embed.title}"
         # Rolled per roll, not per animal: the same species can come back
         # with a better appeal, which makes rescuing it again worthwhile.
         appeal = roll_appeal(status.appeal_level)

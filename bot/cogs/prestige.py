@@ -101,7 +101,7 @@ class Prestige(commands.Cog):
         text = (
             f"Prestige actuel : **{level}** (+{prestige_bonus(level)} % de {CURRENCY_NAME})\n"
             f"Au niveau suivant : +{prestige_bonus(level + 1)} % de {CURRENCY_NAME}\n"
-            f"Milestone demandé : **{milestone.label}**\n"
+            f"Milestone demandé : {milestone.badge} **{milestone.label}**\n"
             f"{_bar(progress(species, milestone), total)}\n\n"
         )
         if not ready:

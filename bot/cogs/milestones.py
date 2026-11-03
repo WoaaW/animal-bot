@@ -59,19 +59,19 @@ class Milestones(commands.Cog):
             f"{'✓' if a.id in owned else '·'} **{a.name}** ({RARITY_LABEL[a.rarity]})"
             for a in members
         ]
-        title = f"{milestone.label} · {progress(species, milestone)}/{len(members)}"
+        title = f"{milestone.badge} {milestone.label} · {progress(species, milestone)}/{len(members)}"
         await send_pages(ctx, paginate(title, lines, discord.Color.gold()), ephemeral=True)
 
     @staticmethod
     def _overview(member: discord.abc.User, species: list[Animal], animals: list[Animal], prestige_level: int) -> discord.Embed:
         required = required_milestone(prestige_level)
-        next_prestige = f"Pour le prochain prestige : **{required.label}**.\n\n" if required else "\n"
+        next_prestige = f"Pour le prochain prestige : {required.badge} **{required.label}**.\n\n" if required else "\n"
         lines = []
         for milestone in MILESTONES:
             count = progress(species, milestone)
             total = sum(milestone.includes(a) for a in animals)
             mark = "✓" if total and count >= total else "·"
-            lines.append(f"{mark} **{milestone.label}**\n{_bar(count, total)}")
+            lines.append(f"{mark} {milestone.badge} **{milestone.label}**\n{_bar(count, total)}")
         return discord.Embed(
             title=f"Milestones de {member.display_name}",
             description=(

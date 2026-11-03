@@ -92,7 +92,7 @@ class Profile(commands.Cog):
         rows.sort(key=_income, reverse=True)
 
         level = status.prestige_level
-        badges = " ".join(f"{m.badge} {m.label}" for m in earned_badges(level)) or "Aucun pour l'instant"
+        badges = " ".join(m.badge for m in earned_badges(level)) or "Aucun pour l'instant"
         summary = discord.Embed(
             title=f"Profil de {target.display_name}",
             description=(
