@@ -78,8 +78,9 @@ class PlayerState(Base):
     # When the period moves on, the count is treated as 0.
     rolls_used: Mapped[int] = mapped_column(default=0, server_default="0")
     rolls_period: Mapped[int] = mapped_column(default=0, server_default="0")
-    # Claims regenerate one per CLAIM_REGEN_SECONDS up to a cap. Stored as a
-    # single anchor time: available = (now - claims_anchor) // regen, capped.
+    # Claims regenerate one per CLAIM_REGEN_SECONDS, on the clock tick, up to a
+    # cap. Stored as a single anchor time:
+    # available = (last tick - claims_anchor) // regen, capped.
     # 0 (the default) means a full stock. See consume_claim in economy.py.
     claims_anchor: Mapped[int] = mapped_column(default=0, server_default="0")
     # Extra rolls/claims handed out (e.g. /admin give): spent only once the

@@ -26,10 +26,11 @@ BASE_ROLLS = 10
 # for everyone, rather than one hour after each player's first roll.
 ROLL_RESET_SECONDS = 3600
 
-# Rescuing costs a claim. Claims come back one per CLAIM_REGEN_SECONDS, per
-# player, and pile up to BASE_CLAIMS + PlayerState.claim_slots.
+# Rescuing costs a claim. Claims come back one per CLAIM_REGEN_SECONDS, at
+# fixed clock times (every hour on the hour) like rolls, and pile up to
+# BASE_CLAIMS + PlayerState.claim_slots per player.
 BASE_CLAIMS = 1
-CLAIM_REGEN_SECONDS = 60
+CLAIM_REGEN_SECONDS = 3600
 
 # A player's score, shown on their profile: each animal they own, copies included,
 # is worth its rarity's score plus its appeal's. Keys must match RARITY_ODDS and APPEAL.
@@ -148,6 +149,12 @@ def seconds_until_reset() -> int:
     return int(ROLL_RESET_SECONDS - time.time() % ROLL_RESET_SECONDS)
 
 
+def _claim_tick(now: int) -> int:
+    """Start of the current claim slot: claims are counted from it rather than
+    from now, so they all come back on the clock tick."""
+    return now - now % CLAIM_REGEN_SECONDS
+
+
 def _current_trade_period() -> int:
     return int(time.time() // TRADE_RESET_SECONDS)
 
@@ -161,8 +168,8 @@ def _status(state: PlayerState) -> PlayerStatus:
     max_rolls = BASE_ROLLS + state.extra_rolls
     used = state.rolls_used if state.rolls_period == _current_period() else 0
     max_claims = BASE_CLAIMS + state.claim_slots
-    claims = min(max_claims, (now - state.claims_anchor) // CLAIM_REGEN_SECONDS)
-    next_claim_in = 0 if claims >= max_claims else CLAIM_REGEN_SECONDS - (now - state.claims_anchor) % CLAIM_REGEN_SECONDS
+    claims = min(max_claims, (_claim_tick(now) - state.claims_anchor) // CLAIM_REGEN_SECONDS)
+    next_claim_in = 0 if claims >= max_claims else CLAIM_REGEN_SECONDS - now % CLAIM_REGEN_SECONDS
     return PlayerStatus(
         points=state.points,
         # Rows from before peak_points existed start at 0: their balance counts.
@@ -251,12 +258,11 @@ async def consume_roll(session: AsyncSession, guild_id: int, user_id: int) -> Pl
 async def consume_claim(session: AsyncSession, guild_id: int, user_id: int) -> PlayerStatus | None:
     """Use one claim, regenerated ones first, then bonus ones; None if none
     is ready. Doesn't commit."""
-    now = int(time.time())
+    now = _claim_tick(int(time.time()))
     await _ensure_player(session, guild_id, user_id)
-    # A claim is ready once the anchor is a full regen period behind. Using
-    # one first clamps the anchor to the cap (claims beyond it are lost, not
-    # banked), then moves it one period forward — so time already counting
-    # toward the next claim is kept.
+    # A claim is ready once the anchor is a full regen period behind the last
+    # clock tick. Using one first clamps the anchor to the cap (claims beyond
+    # it are lost, not banked), then moves it one period forward.
     full_anchor = now - (BASE_CLAIMS + PlayerState.claim_slots) * CLAIM_REGEN_SECONDS
     status = await _update_player(
         session, guild_id, user_id,
