@@ -91,7 +91,7 @@ class Reserve(commands.Cog):
             lines = ["Vide ! Expose tes animaux sauvés avec `/reserve add`."]
         title = f"Réserve de {ctx.author.display_name} ({status.used}/{status.max_slots}) · {format_rate(status.rate)} {CURRENCY_NAME}/h"
         if status.bonus:
-            title += f" (dont +{status.bonus} % de succès)"
+            title += f" (dont +{status.bonus} % de collections)"
         pages = paginate(title, lines, discord.Color.dark_green())
         for page in pages:
             page.add_field(

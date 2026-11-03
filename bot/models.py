@@ -23,7 +23,7 @@ class Animal(Base):
     iucn_status: Mapped[str | None] = mapped_column(String(2), nullable=True)
     # Scientific names of the animal's families, orders and classes (several
     # when Wikidata lists competing classifications), as "|Felidae|Carnivora|
-    # Mammalia|". Achievements (achievements.py) match groups against it.
+    # Mammalia|". Collections (species_collections.py) match groups against it.
     taxa: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

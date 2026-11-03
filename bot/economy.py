@@ -1,14 +1,15 @@
 import math
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 
 from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from .achievements import rescued_species, total_bonus
+from .species_collections import Collection, completed, rescued_species, total_bonus
 from .models import Animal, PlayerState, Rescue
 
 # Display name of the currency — the only place to change when it gets renamed.
@@ -283,7 +284,7 @@ async def get_status(session: AsyncSession, guild_id: int, user_id: int) -> Play
 @dataclass
 class ReserveStatus:
     rate: float      # points per hour, all animals in the reserve together, bonus included
-    bonus: int       # % added by completed achievements
+    bonus: int       # % added by completed collections
     pending: int     # points waiting to be collected
     used: int
     max_slots: int
@@ -303,7 +304,7 @@ def _in_reserve(guild_id: int, user_id: int, rescue=Rescue):
 
 
 async def _reserve_rate(session: AsyncSession, guild_id: int, user_id: int) -> tuple[int, int, int]:
-    """(points per hour before bonus, achievement bonus in %, number of
+    """(points per hour before bonus, collection bonus in %, number of
     animals) of a player's reserve."""
     income = case(
         *[
@@ -341,8 +342,8 @@ async def collect_reserve(session: AsyncSession, guild_id: int, user_id: int) ->
     """Pay what the reserve earned since the last collection (at most
     RESERVE_CAP_SECONDS' worth) and start counting again from now. Returns the
     points paid. Runs before every change to the reserve and before every
-    rescue (which can complete an achievement), so neither an animal nor a
-    bonus ever earns for time it wasn't there. Doesn't commit."""
+    rescue or trade (which can complete or break an collection), so neither an
+    animal nor a bonus ever earns for time it wasn't there. Doesn't commit."""
     now = int(time.time())
     await _ensure_player(session, guild_id, user_id)
     base, bonus, _ = await _reserve_rate(session, guild_id, user_id)
@@ -401,3 +402,77 @@ async def remove_from_reserve(session: AsyncSession, guild_id: int, user_id: int
         .execution_options(synchronize_session=False)
     )
     return result.rowcount == 1
+
+
+@dataclass(frozen=True)
+class TradeSide:
+    """What one player hands over in a trade."""
+    user_id: int
+    rescue_id: int | None = None
+    points: int = 0
+
+
+@dataclass
+class TradeResult:
+    # None on success, else why it failed ("reserve": the animal is in its
+    # owner's reserve, "moved": it isn't theirs anymore, "points": balance too
+    # low) and whose side failed. The caller must not commit a failed trade.
+    failure: str | None = None
+    failed_user_id: int | None = None
+    # user id → collections gained or lost by this trade.
+    unlocked: dict[int, list[Collection]] = field(default_factory=dict)
+    lost: dict[int, list[Collection]] = field(default_factory=dict)
+
+
+async def _give_rescue(session: AsyncSession, guild_id: int, rescue_id: int, from_id: int, to_id: int) -> str | None:
+    """Hand a rescue over; returns the failure reason, if any. The date becomes
+    the transfer's, as /sanctuary shows when the owner got the animal."""
+    result = await session.execute(
+        update(Rescue)
+        .where(Rescue.id == rescue_id, Rescue.guild_id == guild_id, Rescue.user_id == from_id, ~Rescue.in_reserve)
+        .values(user_id=to_id, rescued_at=datetime.utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 1:
+        return None
+    in_reserve = await session.scalar(
+        select(Rescue.in_reserve).where(Rescue.id == rescue_id, Rescue.guild_id == guild_id, Rescue.user_id == from_id)
+    )
+    return "reserve" if in_reserve else "moved"
+
+
+async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: TradeSide) -> TradeResult:
+    """Swap what each side hands over, all or nothing. Doesn't commit: commit
+    only if `failure` is None, closing the session otherwise rolls it all back."""
+    # A trade can complete or break collections, which changes reserve income:
+    # pay what was earned at the old rate first. These writes also take SQLite's
+    # write lock, so nothing can change between here and the commit.
+    species_before = {}
+    for side in (a, b):
+        await collect_reserve(session, guild_id, side.user_id)
+        species_before[side.user_id] = await rescued_species(session, guild_id, side.user_id)
+
+    for side, other in ((a, b), (b, a)):
+        if side.rescue_id is not None:
+            reason = await _give_rescue(session, guild_id, side.rescue_id, side.user_id, other.user_id)
+            if reason:
+                return TradeResult(failure=reason, failed_user_id=side.user_id)
+    # Every debit before any credit: points received can't fund the other side.
+    for side in (a, b):
+        if side.points and await _update_player(
+            session, guild_id, side.user_id,
+            PlayerState.points >= side.points,
+            points=PlayerState.points - side.points,
+        ) is None:
+            return TradeResult(failure="points", failed_user_id=side.user_id)
+    for side, other in ((a, b), (b, a)):
+        if side.points:
+            await add_points(session, guild_id, other.user_id, side.points)
+
+    result = TradeResult()
+    for side in (a, b):
+        done_before = completed(species_before[side.user_id])
+        done_after = completed(await rescued_species(session, guild_id, side.user_id))
+        result.unlocked[side.user_id] = [x for x in done_after if x not in done_before]
+        result.lost[side.user_id] = [x for x in done_before if x not in done_after]
+    return result

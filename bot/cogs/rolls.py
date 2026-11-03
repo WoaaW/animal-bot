@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 from sqlalchemy import select
 
-from ..achievements import ACHIEVEMENT_TARGET, ACHIEVEMENTS, completed, progress, rescued_species
+from ..species_collections import COLLECTION_TARGET, COLLECTIONS, completed, progress, rescued_species
 from ..db import SessionLocal
 from ..economy import (
     APPEAL,
@@ -140,7 +140,7 @@ def rarity_initials(rarity: str) -> str:
 
 
 def format_rate(rate: float) -> str:
-    # Points per hour: "45", or "6,2" when an achievement bonus adds a fraction.
+    # Points per hour: "45", or "6,2" when an collection bonus adds a fraction.
     return f"{rate:.0f}" if rate == int(rate) else f"{rate:.1f}".replace(".", ",")
 
 
@@ -224,7 +224,7 @@ class RescueView(discord.ui.View):
                     ephemeral=True,
                 )
                 return
-            # This rescue may complete an achievement, which raises reserve
+            # This rescue may complete an collection, which raises reserve
             # income: pay what was earned at the old rate first.
             await collect_reserve(session, self.guild_id, interaction.user.id)
             before = await rescued_species(session, self.guild_id, interaction.user.id)
@@ -253,8 +253,8 @@ class RescueView(discord.ui.View):
             f"{interaction.user.mention} a sauvé **{self.animal.name}** · "
             f"{rarity_initials(self.animal.rarity)} ({format_appeal(self.appeal)}) !"
         )
-        for achievement in unlocked:
-            message += f"\nSuccès débloqué : **{achievement.label}** (+{achievement.bonus} % de revenu de réserve)"
+        for collection in unlocked:
+            message += f"\nCollection complétée : **{collection.label}** (+{collection.bonus} % de revenu de réserve)"
         await interaction.followup.send(message, allowed_mentions=discord.AllowedMentions.none())
 
     @discord.ui.button(label="En savoir plus", style=discord.ButtonStyle.secondary)
@@ -460,16 +460,16 @@ class Rolls(commands.Cog):
             value=f"{format_appeal(appeal)} · {reserve_income(animal.rarity, appeal)} {CURRENCY_NAME}/h dans la réserve",
             inline=False,
         )
-        # The achievement groups this animal counts for, with the roller's
+        # The collection groups this animal counts for, with the roller's
         # progress in each (✓ once complete).
-        groups = [a for a in ACHIEVEMENTS if a.includes(animal)]
+        groups = [a for a in COLLECTIONS if a.includes(animal)]
         if groups:
             lines = []
-            for achievement in groups:
-                count = progress(species, achievement)
-                done = " ✓" if count >= ACHIEVEMENT_TARGET else ""
-                lines.append(f"{achievement.label} · {min(count, ACHIEVEMENT_TARGET)}/{ACHIEVEMENT_TARGET}{done}")
-            embed.add_field(name="Succès", value="\n".join(lines), inline=False)
+            for collection in groups:
+                count = progress(species, collection)
+                done = " ✓" if count >= COLLECTION_TARGET else ""
+                lines.append(f"{collection.label} · {min(count, COLLECTION_TARGET)}/{COLLECTION_TARGET}{done}")
+            embed.add_field(name="Collections", value="\n".join(lines), inline=False)
         if owned:
             copies = "\n".join(format_appeal(a) for a in owned[:MAX_COPIES_SHOWN])
             if len(owned) > MAX_COPIES_SHOWN:
@@ -564,7 +564,7 @@ class Rolls(commands.Cog):
         await send_pages(ctx, pages)
 
     @commands.hybrid_command(name="animals", description="Liste tous les animaux, des plus rares aux plus communs.")
-    @app_commands.describe(rarity="N'afficher qu'une rareté", group="N'afficher qu'un groupe de succès")
+    @app_commands.describe(rarity="N'afficher qu'une rareté", group="N'afficher qu'une collection")
     @app_commands.choices(rarity=[app_commands.Choice(name=RARITY_LABEL[t].capitalize(), value=t) for t in RARITY_ODDS])
     async def animals(self, ctx: commands.Context, rarity: str | None = None, *, group: str | None = None):
         if ctx.interaction is None:
@@ -577,11 +577,11 @@ class Rolls(commands.Cog):
             labels = ", ".join(RARITY_LABEL.values())
             await ctx.send(f"Rareté inconnue. Choisis parmi : {labels}.", ephemeral=True)
             return
-        achievement = None
+        collection = None
         if group:
             needle = _fold(group)
-            achievement = next((a for a in ACHIEVEMENTS if _fold(a.label) == needle), None)
-            if achievement is None:
+            collection = next((a for a in COLLECTIONS if _fold(a.label) == needle), None)
+            if collection is None:
                 await ctx.send(f"Aucun groupe ne s'appelle « {group} ».", ephemeral=True)
                 return
         await ctx.defer(ephemeral=True)
@@ -590,8 +590,8 @@ class Rolls(commands.Cog):
             if rarity is not None:
                 stmt = stmt.where(Animal.rarity == rarity)
             animals = list((await session.execute(stmt)).scalars().all())
-            if achievement is not None:
-                animals = [a for a in animals if achievement.includes(a)]
+            if collection is not None:
+                animals = [a for a in animals if collection.includes(a)]
             owners: dict[int, list[int]] = {}
             if ctx.guild is not None:
                 rescues = await session.execute(
@@ -615,9 +615,9 @@ class Rolls(commands.Cog):
                     line += f" +{len(rescuers) - MAX_RESCUERS_SHOWN}"
             lines.append(line)
 
-        title = achievement.label if achievement else "Animaux"
+        title = collection.label if collection else "Animaux"
         if rarity is not None:
-            title += f" {RARITY_LABEL[rarity]}s" if achievement is None else f" · {RARITY_LABEL[rarity]}s"
+            title += f" {RARITY_LABEL[rarity]}s" if collection is None else f" · {RARITY_LABEL[rarity]}s"
         title += f" ({len(animals)})"
         if ctx.guild is not None:
             title += f" · {sum(a.id in owners for a in animals)} sauvés ici"
@@ -627,7 +627,7 @@ class Rolls(commands.Cog):
     @animals.autocomplete("group")
     async def animals_group_autocomplete(self, interaction: discord.Interaction, current: str):
         needle = _fold(current)
-        return [app_commands.Choice(name=a.label, value=a.label) for a in ACHIEVEMENTS if needle in _fold(a.label)][:25]
+        return [app_commands.Choice(name=a.label, value=a.label) for a in COLLECTIONS if needle in _fold(a.label)][:25]
 
     @commands.hybrid_command(name="info", description="Affiche la description Wikipédia complète d'un animal.")
     @app_commands.describe(animal="L'animal à rechercher")

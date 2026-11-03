@@ -247,7 +247,7 @@ class Economy(commands.Cog):
             + f" (recharge dans {format_wait(seconds_until_reset())}).\n"
             f"{claims}\n"
             f"Réserve : **{reserve.used}/{reserve.max_slots}** animaux, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"
-            + (f" (dont +{reserve.bonus} % de succès)" if reserve.bonus else "")
+            + (f" (dont +{reserve.bonus} % de collections)" if reserve.bonus else "")
             + ", "
             f"**{reserve.pending}** en attente dans `/reserve`.\n"
             f"Niveau de chance : **{status.luck_level}** · niveau d'attrait : **{status.appeal_level}**",
