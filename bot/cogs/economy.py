@@ -6,13 +6,14 @@ from ..economy import (
     BASE_ROLLS,
     CLAIM_REGEN_SECONDS,
     CURRENCY_NAME,
+    CURRENCY_WORD,
     PlayerStatus,
     appeal_odds,
     buy_upgrade,
+    collect_reserve,
     get_reserve_status,
     get_status,
     seconds_until_reset,
-    prestige_bonus,
     upgrade_max_level,
     upgrade_maxed,
     upgrade_price,
@@ -95,7 +96,7 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
 
     embed = discord.Embed(
         title="Boutique",
-        description=f"Tu as **{status.points}** {CURRENCY_NAME}. Tes améliorations durent jusqu'à ton prochain `/prestige`, sauf les places de réserve.",
+        description=f"Tu as **{status.points}** {CURRENCY_NAME}.",
         color=discord.Color.gold(),
     )
     # upgrade -> (field name, field value). A maxed upgrade shows where the
@@ -225,7 +226,7 @@ class Economy(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="balance", description=f"Affiche tes {CURRENCY_NAME}, tes rolls et tes claims.")
+    @commands.hybrid_command(name="balance", description=f"Affiche tes {CURRENCY_WORD}, tes rolls et tes claims.")
     async def balance(self, ctx: commands.Context):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
@@ -250,25 +251,28 @@ class Economy(commands.Cog):
             f"Réserve : **{reserve.used}/{reserve.max_slots}** animaux, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"
             + format_reserve_bonus(reserve)
             + ", "
-            f"**{reserve.pending}** en attente dans `/reserve`.\n"
+            f"**{reserve.pending}** en attente (encaisse avec `/reserve` ou `/shop`).\n"
             f"Niveau de chance : **{status.luck_level}** · niveau d'attrait : **{status.appeal_level}**\n"
-            f"Échanges restants aujourd'hui : **{status.trades_left}** · prestige : **{status.prestige_level}**"
-            + (f" (+{prestige_bonus(status.prestige_level)} % de {CURRENCY_NAME})" if status.prestige_level else ""),
+            f"Échanges restants aujourd'hui : **{status.trades_left}**",
             ephemeral=True,
         )
 
-    @commands.hybrid_command(name="shop", description=f"Dépense tes {CURRENCY_NAME} en améliorations.")
+    @commands.hybrid_command(name="shop", description=f"Dépense tes {CURRENCY_WORD} en améliorations.")
     async def shop(self, ctx: commands.Context):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
             return
         await ctx.defer(ephemeral=True)
 
+        # Opening the shop collects the reserve, so its points can be spent.
         async with SessionLocal() as session:
+            paid = await collect_reserve(session, ctx.guild.id, ctx.author.id)
+            await session.commit()
             status = await get_status(session, ctx.guild.id, ctx.author.id)
 
         view = ShopView(ctx.author.id, ctx.guild.id, status)
-        view.message = await ctx.send(embed=shop_embed(status), view=view, ephemeral=True)
+        content = f"Tu as encaissé **{paid}** {CURRENCY_NAME} grâce à ta réserve !" if paid else None
+        view.message = await ctx.send(content, embed=shop_embed(status), view=view, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

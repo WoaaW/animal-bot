@@ -4,8 +4,8 @@ from discord.ext import commands
 from sqlalchemy import func, select
 
 from ..db import SessionLocal
-from ..economy import CURRENCY_NAME, animal_score, get_reserve_status, get_status, prestige_bonus, reserve_income
-from ..milestones import earned_badges
+from ..economy import CURRENCY_NAME, animal_score, completed_milestones, get_reserve_status, milestone_bonus, reserve_income
+from ..milestones import MILESTONES
 from ..models import Animal, Rescue
 from ..species_collections import COLLECTIONS, completed, rescued_species
 from .reserve import _income, _rescues
@@ -71,7 +71,7 @@ class Profile(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="profile", description="Affiche le profil d'un joueur : badges de prestige et réserve.")
+    @commands.hybrid_command(name="profile", description="Affiche le profil d'un joueur : badges de milestones et réserve.")
     @app_commands.describe(member="Le joueur à afficher (toi par défaut)")
     @app_commands.guild_only()
     async def profile(self, ctx: commands.Context, member: discord.Member | None = None):
@@ -82,7 +82,7 @@ class Profile(commands.Cog):
         target = member or ctx.author
 
         async with SessionLocal() as session:
-            status = await get_status(session, ctx.guild.id, target.id)
+            reached = await completed_milestones(session, ctx.guild.id, target.id)
             reserve = await get_reserve_status(session, ctx.guild.id, target.id)
             species = await rescued_species(session, ctx.guild.id, target.id)
             pool_size = await session.scalar(select(func.count()).select_from(Animal))
@@ -91,13 +91,12 @@ class Profile(commands.Cog):
         rows = [row for row in owned if row[0].in_reserve]
         rows.sort(key=_income, reverse=True)
 
-        level = status.prestige_level
-        badges = " ".join(m.badge for m in earned_badges(level)) or "Aucun pour l'instant"
+        badges = " ".join(m.badge for m in reached) or "Aucun pour l'instant"
         summary = discord.Embed(
             title=f"Profil de {target.display_name}",
             description=(
-                f"Score : **{score}**\nPrestige : **{level}**"
-                + (f" (+{prestige_bonus(level)} % de {CURRENCY_NAME})" if level else "")
+                f"Score : **{score}**\nMilestones : **{len(reached)}/{len(MILESTONES)}**"
+                + (f" (+{milestone_bonus(len(reached))} % de {CURRENCY_NAME})" if reached else "")
                 + f"\nBadges : {badges}\n"
                 f"Espèces : **{len(species)}/{pool_size}** · collections : **{len(completed(species))}/{len(COLLECTIONS)}**\n"
                 f"Réserve : **{reserve.used}/{reserve.max_slots}** animaux, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"

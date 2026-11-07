@@ -15,7 +15,10 @@ from .milestones import Milestone
 from .models import Animal, PlayerState, Rescue
 
 # Display name of the currency — the only place to change when it gets renamed.
-CURRENCY_NAME = "points"
+# CURRENCY_WORD is the bare word, for places where an emoji doesn't belong
+# (slash command descriptions). The word is feminine plural: mind agreements.
+CURRENCY_WORD = "baies"
+CURRENCY_NAME = f"{CURRENCY_WORD} 🫐"
 
 # Points earned by the roller on every roll, by the rolled animal's rarity. Keys must match RARITY_ODDS.
 RARITY_POINTS = {"common": 10, "uncommon": 25, "rare": 50, "epic": 100, "legendary": 250, "mythic": 500}
@@ -37,8 +40,10 @@ CLAIM_REGEN_SECONDS = 3600
 RARITY_SCORE = {"common": 1, "uncommon": 2, "rare": 5, "epic": 10, "legendary": 25, "mythic": 50}
 APPEAL_SCORE = {1: 1, 2: 2, 3: 3, 4: 5, 5: 8}
 
-# Each prestige level adds this % to the points a player earns, from rolls and
-# from the reserve. It multiplies the collection bonus rather than adding to it.
+# Each completed milestone adds this % to the points a player earns, from rolls
+# and from the reserve. It multiplies the collection bonus rather than adding to it.
+MILESTONE_POINTS_BONUS = 25
+# Prestige is shelved (its cog isn't loaded): kept for bot/cogs/prestige.py.
 PRESTIGE_POINTS_BONUS = 25
 
 # Accepted trades per player per day, gifts included. Days are fixed clock slots
@@ -62,8 +67,8 @@ BASE_RESERVE_SLOTS = 1
 RESERVE_CAP_SECONDS = 12 * 3600
 
 # Shop upgrades: (PlayerState column holding the level, price of level 0 → 1,
-# price growth per level, max level or None). Every upgrade lasts until the next prestige and
-# pricier each time. Caps are written as totals minus the default, so the
+# price growth per level, max level or None). Every level is
+# pricier than the last. Caps are written as totals minus the default, so the
 # total stays the same if a default changes.
 UPGRADES = {
     "rolls": (PlayerState.extra_rolls, 100, 1.5, 25 - BASE_ROLLS),   # +1 roll per window, up to 25
@@ -100,9 +105,22 @@ def prestige_bonus(level: int) -> int:
     return PRESTIGE_POINTS_BONUS * level
 
 
-def prestige_points(amount: int, level: int) -> int:
-    """`amount` points with the prestige bonus; halves round up."""
-    return math.floor(amount * (100 + prestige_bonus(level)) / 100 + 0.5)
+def milestone_bonus(count: int) -> int:
+    """Extra points in % for `count` completed milestones."""
+    return MILESTONE_POINTS_BONUS * count
+
+
+def milestone_points(amount: int, count: int) -> int:
+    """`amount` points with the bonus of `count` milestones; halves round up."""
+    return math.floor(amount * (100 + milestone_bonus(count)) / 100 + 0.5)
+
+
+async def completed_milestones(session: AsyncSession, guild_id: int, user_id: int) -> list[Milestone]:
+    """The milestones a player currently has, computed from their species."""
+    species = await rescued_species(session, guild_id, user_id)
+    # Plain rows, not Animal entities: completed() only reads id and taxa.
+    pool = (await session.execute(select(Animal.id, Animal.taxa))).all()
+    return milestones.completed(species, pool)
 
 
 def upgrade_price(upgrade: str, level: int) -> int:
@@ -333,19 +351,23 @@ async def get_status(session: AsyncSession, guild_id: int, user_id: int) -> Play
 class ReserveStatus:
     rate: float      # points per hour, all animals in the reserve together, bonuses included
     bonus: int       # % added by completed collections
-    prestige: int    # % added by prestige
+    milestones: int  # % added by completed milestones
     pending: int     # points waiting to be collected
     used: int
     max_slots: int
 
 
-def _reserve_earnings(base: int, bonus: int, prestige_pct: int, anchor: int, remainder: int, now: int) -> tuple[int, int]:
-    """(points earned since anchor, leftover point-seconds). Counting in
-    point-seconds keeps the fraction of a point between collections, and
-    applying the bonus % there (not to the hourly rate) keeps a small bonus
-    on a small reserve from rounding away."""
-    earned = base * (100 + bonus) * (100 + prestige_pct) * min(now - anchor, RESERVE_CAP_SECONDS) // 10000 + remainder
-    return divmod(earned, 3600)
+def _reserve_segment(base: int, bonus: int, milestone_pct: int, anchor: int, elapsed: int, now: int) -> tuple[int, int]:
+    """(point-seconds earned, seconds of production counted) between anchor
+    and now. The reserve produces for RESERVE_CAP_SECONDS at most between two
+    payouts (`elapsed` already counted). An empty reserve produces nothing, so
+    it doesn't use up that time either. Counting in point-seconds keeps the
+    fraction of a point, and applying the bonus % there (not to the hourly
+    rate) keeps a small bonus on a small reserve from rounding away."""
+    if base == 0:
+        return 0, 0
+    seconds = max(0, min(now - anchor, RESERVE_CAP_SECONDS - elapsed))
+    return base * (100 + bonus) * (100 + milestone_pct) * seconds // 10000, seconds
 
 
 def _in_reserve(guild_id: int, user_id: int, rescue=Rescue):
@@ -374,53 +396,78 @@ async def _reserve_rate(session: AsyncSession, guild_id: int, user_id: int) -> t
     return base, bonus, used
 
 
-async def get_reserve_status(session: AsyncSession, guild_id: int, user_id: int) -> ReserveStatus:
+async def _reserve_state(session: AsyncSession, guild_id: int, user_id: int) -> tuple[int, int, int, int, int, int, int, int]:
+    """(base rate, collection bonus %, animals placed, milestone bonus %,
+    anchor, banked point-seconds, elapsed seconds, extra slots) of a player's
+    reserve. Read-only: a player without a row gets zeros."""
     base, bonus, used = await _reserve_rate(session, guild_id, user_id)
+    milestone_pct = milestone_bonus(len(await completed_milestones(session, guild_id, user_id)))
     row = (
         await session.execute(
-            select(PlayerState.reserve_anchor, PlayerState.reserve_remainder, PlayerState.reserve_slots, PlayerState.prestige_level)
-            .where(*_player(guild_id, user_id))
+            select(
+                PlayerState.reserve_anchor, PlayerState.reserve_remainder,
+                PlayerState.reserve_elapsed, PlayerState.reserve_slots,
+            ).where(*_player(guild_id, user_id))
         )
     ).one_or_none()
-    anchor, remainder, slots, level = row or (0, 0, 0, 0)
-    prestige_pct = prestige_bonus(level)
-    pending, _ = _reserve_earnings(base, bonus, prestige_pct, anchor, remainder, int(time.time()))
+    anchor, banked, elapsed, slots = row or (0, 0, 0, 0)
+    return base, bonus, used, milestone_pct, anchor, banked, elapsed, slots
+
+
+async def get_reserve_status(session: AsyncSession, guild_id: int, user_id: int) -> ReserveStatus:
+    base, bonus, used, milestone_pct, anchor, banked, elapsed, slots = await _reserve_state(session, guild_id, user_id)
+    earned, _ = _reserve_segment(base, bonus, milestone_pct, anchor, elapsed, int(time.time()))
     return ReserveStatus(
-        rate=base * (100 + bonus) * (100 + prestige_pct) / 10000,
+        rate=base * (100 + bonus) * (100 + milestone_pct) / 10000,
         bonus=bonus,
-        prestige=prestige_pct,
-        pending=pending,
+        milestones=milestone_pct,
+        pending=(banked + earned) // 3600,
         used=used,
         max_slots=BASE_RESERVE_SLOTS + slots,
     )
 
 
-async def collect_reserve(session: AsyncSession, guild_id: int, user_id: int) -> int:
-    """Pay what the reserve earned since the last collection (at most
-    RESERVE_CAP_SECONDS' worth) and start counting again from now. Returns the
-    points paid. Runs before every change to the reserve and before every
-    rescue or trade (which can complete or break an collection), so neither an
-    animal nor a bonus ever earns for time it wasn't there. Doesn't commit."""
+async def bank_reserve(session: AsyncSession, guild_id: int, user_id: int) -> None:
+    """Count what the reserve earned since the anchor, at the current rate,
+    and bank it without paying it out. Runs before every change to the reserve
+    and before every rescue or trade (which can complete or break a
+    collection), so neither an animal nor a bonus ever earns for time it
+    wasn't there. Only /reserve view and /shop pay (collect_reserve), so
+    players see everything they earned there. Doesn't commit."""
     now = int(time.time())
     await _ensure_player(session, guild_id, user_id)
-    base, bonus, _ = await _reserve_rate(session, guild_id, user_id)
-    anchor, remainder, level = (
-        await session.execute(
-            select(PlayerState.reserve_anchor, PlayerState.reserve_remainder, PlayerState.prestige_level)
-            .where(*_player(guild_id, user_id))
-        )
-    ).one()
-    paid, remainder_left = _reserve_earnings(base, bonus, prestige_bonus(level), anchor, remainder, now)
-    # Only applies if nobody collected in between (same idea as buy_upgrade's
-    # from_level): a concurrent collection already paid this time.
+    base, bonus, _, milestone_pct, anchor, banked, elapsed, _ = await _reserve_state(session, guild_id, user_id)
+    earned, seconds = _reserve_segment(base, bonus, milestone_pct, anchor, elapsed, now)
+    # Only applies if nobody banked in between (same idea as buy_upgrade's
+    # from_level): a concurrent call already counted this time.
+    await _update_player(
+        session, guild_id, user_id,
+        PlayerState.reserve_anchor == anchor,
+        PlayerState.reserve_remainder == banked,
+        reserve_anchor=now,
+        reserve_remainder=banked + earned,
+        reserve_elapsed=elapsed + seconds,
+    )
+
+
+async def collect_reserve(session: AsyncSession, guild_id: int, user_id: int) -> int:
+    """Pay out everything the reserve banked and earned since the last payout
+    (whole points; the fraction stays banked) and start a new
+    RESERVE_CAP_SECONDS window. Returns the points paid. Doesn't commit."""
+    now = int(time.time())
+    await _ensure_player(session, guild_id, user_id)
+    base, bonus, _, milestone_pct, anchor, banked, elapsed, _ = await _reserve_state(session, guild_id, user_id)
+    earned, _ = _reserve_segment(base, bonus, milestone_pct, anchor, elapsed, now)
+    paid, left = divmod(banked + earned, 3600)
     status = await _update_player(
         session, guild_id, user_id,
         PlayerState.reserve_anchor == anchor,
-        PlayerState.reserve_remainder == remainder,
+        PlayerState.reserve_remainder == banked,
         points=PlayerState.points + paid,
         peak_points=func.max(PlayerState.peak_points, PlayerState.points + paid),
         reserve_anchor=now,
-        reserve_remainder=remainder_left,
+        reserve_remainder=left,
+        reserve_elapsed=0,
     )
     return paid if status else 0
 
@@ -428,7 +475,7 @@ async def collect_reserve(session: AsyncSession, guild_id: int, user_id: int) ->
 async def place_in_reserve(session: AsyncSession, guild_id: int, user_id: int, rescue_id: int) -> bool:
     """Put one of the player's rescues in their reserve. False if it isn't
     theirs, is already there, or the reserve is full. Doesn't commit."""
-    await collect_reserve(session, guild_id, user_id)
+    await bank_reserve(session, guild_id, user_id)
     # Aliased: a plain Rescue in the subquery would be correlated to the
     # UPDATE's own table and stop counting.
     placed = aliased(Rescue)
@@ -452,7 +499,7 @@ async def place_in_reserve(session: AsyncSession, guild_id: int, user_id: int, r
 async def remove_from_reserve(session: AsyncSession, guild_id: int, user_id: int, rescue_id: int) -> bool:
     """Take one of the player's rescues out of their reserve. False if it
     wasn't there. Doesn't commit."""
-    await collect_reserve(session, guild_id, user_id)
+    await bank_reserve(session, guild_id, user_id)
     result = await session.execute(
         update(Rescue)
         .where(Rescue.id == rescue_id, *_in_reserve(guild_id, user_id))
@@ -519,7 +566,7 @@ async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: T
     # write lock, so nothing can change between here and the commit.
     species_before = {}
     for side in (a, b):
-        await collect_reserve(session, guild_id, side.user_id)
+        await bank_reserve(session, guild_id, side.user_id)
         species_before[side.user_id] = await rescued_species(session, guild_id, side.user_id)
 
     for side in (a, b):
@@ -547,7 +594,8 @@ async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: T
 
 
 async def prestige(session: AsyncSession, guild_id: int, user_id: int, from_level: int) -> PlayerStatus | None:
-    """Move up one prestige level: wipes points, upgrades (except reserve places)
+    """Shelved: /prestige isn't loaded anymore, kept in case it comes back.
+    Move up one prestige level: wipes points, upgrades (except reserve places)
     and every animal outside the reserve. Keeps the reserve, bonus rolls/claims,
     wishes and the roll, claim and trade counters. Income not collected yet is
     lost, and the kept animals start earning from now. None if the required milestone isn't complete or the player isn't
@@ -572,6 +620,7 @@ async def prestige(session: AsyncSession, guild_id: int, user_id: int, from_leve
         appeal_level=0,
         reserve_anchor=int(time.time()),
         reserve_remainder=0,
+        reserve_elapsed=0,
     )
     if status is None:
         return None

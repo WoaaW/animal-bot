@@ -55,6 +55,10 @@ TAXON_RANKS = ("Q35409", "Q36602", "Q37517")
 
 # TextExtracts returns at most 20 intro extracts per request.
 WIKIPEDIA_BATCH = 20
+# Longest side of the stored image, in px. Embeds never show it much bigger, and
+# originals can weigh several MB, which Discord is slow to load. Wikimedia serves
+# thumbnails in fixed size steps (…, 500, 960, 1280…): stick to one of them.
+IMAGE_SIZE = 960
 WIKIDATA_BATCH = 200
 # Walking up the taxonomy (P171*) is heavier, so fewer items per query.
 TAXA_BATCH = 100
@@ -92,7 +96,8 @@ def fetch_wikipedia(scientific_names: list[str]) -> dict[str, dict[str, str | No
                 continue
             results[name] = {
                 "description": page.get("extract", "").strip() or None,
-                "image_url": (page.get("original") or {}).get("source"),
+                # Smaller images come back as the original.
+                "image_url": (page.get("thumbnail") or {}).get("source"),
                 "wiki_url": page.get("fullurl"),
                 "iucn_status": None,
                 "taxa": None,
@@ -121,7 +126,8 @@ def _query_pages(titles: list[str]) -> tuple[dict[str, dict], dict[str, str]]:
         "exintro": 1,          # only the lead section, before the first heading
         "explaintext": 1,
         "exlimit": "max",
-        "piprop": "original",
+        "piprop": "thumbnail",
+        "pithumbsize": IMAGE_SIZE,
         "inprop": "url",
         "ppprop": "wikibase_item",
         "titles": "|".join(titles),

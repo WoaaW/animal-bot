@@ -5,7 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from ..db import SessionLocal
-from ..economy import CURRENCY_NAME, add_points, get_status, give_bonus, reset_player
+from ..economy import CURRENCY_NAME, CURRENCY_WORD, add_points, get_status, give_bonus, reset_player
 
 
 class Admin(commands.Cog):
@@ -28,7 +28,7 @@ class Admin(commands.Cog):
     async def admin(self, ctx: commands.Context):
         await ctx.send(f"Sous-commandes : `give`, `reset`. Voir `{ctx.prefix}admin give`.", ephemeral=True)
 
-    @admin.command(name="give", description="Donne des points, rolls ou claims bonus à un joueur.")
+    @admin.command(name="give", description=f"Donne des {CURRENCY_WORD}, rolls ou claims bonus à un joueur.")
     @app_commands.describe(
         what="Ce qu'il faut donner",
         amount="La quantité",
@@ -54,7 +54,7 @@ class Admin(commands.Cog):
             status = await get_status(session, ctx.guild.id, target.id)
 
         await ctx.send(
-            f"**{amount}** {CURRENCY_NAME if what == 'points' else what} donnés à {target.mention}. "
+            f"{target.mention} reçoit **{amount}** {CURRENCY_NAME if what == 'points' else what}. "
             f"Ce joueur a maintenant {status.points} {CURRENCY_NAME}, "
             f"{status.rolls_left} rolls (+{status.bonus_rolls} bonus), "
             f"{status.claims} claims (+{status.bonus_claims} bonus).",
@@ -62,7 +62,7 @@ class Admin(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none(),
         )
 
-    @admin.command(name="reset", description="Remet à zéro les points, rolls, claims et améliorations d'un joueur.")
+    @admin.command(name="reset", description=f"Remet à zéro les {CURRENCY_WORD}, rolls, claims et améliorations d'un joueur.")
     @app_commands.describe(member="Le joueur (toi par défaut)")
     async def reset(self, ctx: commands.Context, member: discord.Member | None = None):
         if ctx.guild is None:

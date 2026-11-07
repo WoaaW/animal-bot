@@ -51,7 +51,8 @@ async def main():
         await bot.load_extension("bot.cogs.reserve")
         await bot.load_extension("bot.cogs.species_collections")
         await bot.load_extension("bot.cogs.milestones")
-        await bot.load_extension("bot.cogs.prestige")
+        # Prestige is shelved: milestones give their badge and bonus directly.
+        # Its code stays in bot/cogs/prestige.py, load it here to bring it back.
         await bot.load_extension("bot.cogs.profile")
         await bot.load_extension("bot.cogs.wishes")
         await bot.load_extension("bot.cogs.trades")

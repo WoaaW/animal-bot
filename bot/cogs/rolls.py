@@ -15,15 +15,16 @@ from ..db import SessionLocal
 from ..economy import (
     APPEAL,
     CURRENCY_NAME,
+    MILESTONE_POINTS_BONUS,
     RARITY_POINTS,
     RESERVE_BASE_INCOME,
     ReserveStatus,
     add_points,
-    collect_reserve,
+    bank_reserve,
     consume_claim,
     consume_roll,
     get_status,
-    prestige_points,
+    milestone_points,
     reserve_income,
     roll_appeal,
     seconds_until_reset,
@@ -148,12 +149,12 @@ def format_rate(rate: float) -> str:
 
 
 def format_reserve_bonus(status: ReserveStatus) -> str:
-    # " (dont +9 % de collections, +25 % de prestige)", or nothing without bonus.
+    # " (dont +9 % de collections, +25 % de milestones)", or nothing without bonus.
     parts = []
     if status.bonus:
         parts.append(f"+{status.bonus} % de collections")
-    if status.prestige:
-        parts.append(f"+{status.prestige} % de prestige")
+    if status.milestones:
+        parts.append(f"+{status.milestones} % de milestones")
     return f" (dont {', '.join(parts)})" if parts else ""
 
 
@@ -196,6 +197,24 @@ def animal_embed(animal: Animal, *, full: bool) -> discord.Embed:
         # Wikipedia text is CC BY-SA: the title link plus this line credit it.
         embed.set_footer(text="Source : Wikipédia")
     return embed
+
+
+def add_collections_field(embed: discord.Embed, animal: Animal, species: list[Animal] | None) -> None:
+    """The collection groups `animal` counts for, with the progress of the
+    player owning `species` in each (✓ once complete). No progress shown
+    when `species` is None (no player to measure, e.g. outside a guild)."""
+    lines = []
+    for collection in COLLECTIONS:
+        if not collection.includes(animal):
+            continue
+        if species is None:
+            lines.append(collection.label)
+            continue
+        count = progress(species, collection)
+        done = " ✓" if count >= COLLECTION_TARGET else ""
+        lines.append(f"{collection.label} · {min(count, COLLECTION_TARGET)}/{COLLECTION_TARGET}{done}")
+    if lines:
+        embed.add_field(name="Collections", value="\n".join(lines), inline=False)
 
 
 class RescueView(discord.ui.View):
@@ -242,9 +261,9 @@ class RescueView(discord.ui.View):
                     ephemeral=True,
                 )
                 return
-            # This rescue may complete an collection, which raises reserve
-            # income: pay what was earned at the old rate first.
-            await collect_reserve(session, self.guild_id, interaction.user.id)
+            # This rescue may complete a collection, which raises reserve
+            # income: bank what was earned at the old rate first.
+            await bank_reserve(session, self.guild_id, interaction.user.id)
             before = await rescued_species(session, self.guild_id, interaction.user.id)
             pool = (await session.execute(select(Animal))).scalars().all()
             session.add(
@@ -278,7 +297,10 @@ class RescueView(discord.ui.View):
         for collection in unlocked:
             message += f"\nCollection complétée : **{collection.label}** (+{collection.bonus} % de revenu de réserve)"
         for milestone in reached:
-            message += f"\nMilestone complété : **{milestone.label}** !"
+            message += (
+                f"\nMilestone complété : {milestone.badge} **{milestone.label}** "
+                f"(+{MILESTONE_POINTS_BONUS} % de {CURRENCY_NAME}) !"
+            )
         await interaction.followup.send(message, allowed_mentions=discord.AllowedMentions.none())
 
     @discord.ui.button(label="En savoir plus", style=discord.ButtonStyle.secondary)
@@ -402,6 +424,28 @@ async def send_pages(
     view.message = await ctx.send(content, embed=pages[0], view=view, ephemeral=ephemeral)
 
 
+class AnimalsView(PaginatorView):
+    """/animals paginator with a button switching between the compact list
+    and one card per animal (photo, collections, rescuers). Switching keeps
+    the place: the first animal of the current list page, or the list page
+    holding the current card."""
+
+    def __init__(self, list_pages: list[discord.Embed], cards: list[discord.Embed], owner_id: int):
+        self.list_pages = list_pages
+        self.cards = cards
+        super().__init__(list_pages, owner_id)
+
+    @discord.ui.button(label="Fiches", emoji="🖼️", style=discord.ButtonStyle.success)
+    async def toggle(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.pages is self.list_pages:
+            self.pages, index = self.cards, self.index * PAGE_SIZE
+            button.label, button.emoji = "Liste", "📋"
+        else:
+            self.pages, index = self.list_pages, self.index // PAGE_SIZE
+            button.label, button.emoji = "Fiches", "🖼️"
+        await self._show(interaction, index)
+
+
 def _parse_animals_filter(text: str) -> tuple[str | None, str | None]:
     """(rarity key, group text) from "!animals" arguments: an optional rarity
     (label or key, "peu commun" is two words) first, then a group. Anything
@@ -432,13 +476,16 @@ class Rolls(commands.Cog):
         async with SessionLocal() as session:
             # Rescued animals stay rollable, and rescuable again.
             animals = list((await session.execute(select(Animal))).scalars().all())
+            # The roll doesn't change them; read before so the bonus is known.
+            species = await rescued_species(session, ctx.guild.id, ctx.author.id)
             # An empty table (seed never run) mustn't cost a roll.
             status = await consume_roll(session, ctx.guild.id, ctx.author.id) if animals else None
             if status is not None:
                 animal = _weighted_pick(animals, rarity_odds(status.luck_level))
                 # Every roll pays its rarity's points, in the same transaction
                 # as the roll it was spent on.
-                points = prestige_points(RARITY_POINTS[animal.rarity], status.prestige_level)
+                reached = milestones.completed(species, animals)
+                points = milestone_points(RARITY_POINTS[animal.rarity], len(reached))
                 await add_points(session, ctx.guild.id, ctx.author.id, points)
             await session.commit()
             if status is not None:
@@ -456,7 +503,6 @@ class Rolls(commands.Cog):
                         )
                     ).scalars()
                 )
-                species = await rescued_species(session, ctx.guild.id, ctx.author.id)
                 wishers = list(
                     (
                         await session.execute(
@@ -489,14 +535,7 @@ class Rolls(commands.Cog):
         )
         # The collection groups this animal counts for, with the roller's
         # progress in each (✓ once complete).
-        groups = [a for a in COLLECTIONS if a.includes(animal)]
-        if groups:
-            lines = []
-            for collection in groups:
-                count = progress(species, collection)
-                done = " ✓" if count >= COLLECTION_TARGET else ""
-                lines.append(f"{collection.label} · {min(count, COLLECTION_TARGET)}/{COLLECTION_TARGET}{done}")
-            embed.add_field(name="Collections", value="\n".join(lines), inline=False)
+        add_collections_field(embed, animal, species)
         if owned:
             copies = "\n".join(format_appeal(a) for a in owned[:MAX_COPIES_SHOWN])
             if len(owned) > MAX_COPIES_SHOWN:
@@ -590,7 +629,7 @@ class Rolls(commands.Cog):
         pages = paginate_sections(f"Sanctuaire de {ctx.author.display_name} ({total})", headers, discord.Color.green())
         await send_pages(ctx, pages)
 
-    @commands.hybrid_command(name="animals", description="Liste tous les animaux, des plus rares aux plus communs.")
+    @commands.hybrid_command(name="animals", description="Liste tous les animaux, des plus communs aux plus rares.")
     @app_commands.describe(rarity="N'afficher qu'une rareté", group="N'afficher qu'une collection")
     @app_commands.choices(rarity=[app_commands.Choice(name=RARITY_LABEL[t].capitalize(), value=t) for t in RARITY_ODDS])
     async def animals(self, ctx: commands.Context, rarity: str | None = None, *, group: str | None = None):
@@ -620,7 +659,10 @@ class Rolls(commands.Cog):
             if collection is not None:
                 animals = [a for a in animals if collection.includes(a)]
             owners: dict[int, list[int]] = {}
+            # The invoker's species, for collection progress on the cards.
+            species = None
             if ctx.guild is not None:
+                species = await rescued_species(session, ctx.guild.id, ctx.author.id)
                 rescues = await session.execute(
                     select(Rescue.animal_id, Rescue.user_id)
                     .where(Rescue.guild_id == ctx.guild.id)
@@ -629,7 +671,8 @@ class Rolls(commands.Cog):
                 for animal_id, user_id in rescues.all():
                     owners.setdefault(animal_id, []).append(user_id)
 
-        animals.sort(key=lambda a: (RARITY_ORDER[a.rarity], _fold(a.name)))
+        # Most common first, names A→Z within a rarity.
+        animals.sort(key=lambda a: (-RARITY_ORDER[a.rarity], _fold(a.name)))
         lines = []
         for a in animals:
             line = f"**{a.name}** — *{a.scientific_name}* ({RARITY_LABEL[a.rarity]})"
@@ -649,7 +692,32 @@ class Rolls(commands.Cog):
         if ctx.guild is not None:
             title += f" · {sum(a.id in owners for a in animals)} sauvés ici"
         color = RARITY_COLOR[rarity] if rarity else discord.Color.green()
-        await send_pages(ctx, paginate(title, lines, color), ephemeral=True)
+        if not animals:
+            await send_pages(ctx, paginate(title, lines, color), ephemeral=True)
+            return
+
+        # One card per animal, in the list's order, for the "Fiches" button.
+        cards = []
+        for number, a in enumerate(animals, 1):
+            card = animal_embed(a, full=False)
+            milestone = milestones.milestone_of(a)
+            if milestone is not None:
+                card.title = f"{milestone.badge} {card.title}"
+            add_collections_field(card, a, species)
+            rescuers = owners.get(a.id)
+            if rescuers:
+                names = ", ".join(f"<@{u}>" for u in rescuers[:MAX_RESCUERS_SHOWN])
+                if len(rescuers) > MAX_RESCUERS_SHOWN:
+                    names += f" +{len(rescuers) - MAX_RESCUERS_SHOWN}"
+                card.add_field(name="🏠 Sauvé ici par", value=names, inline=False)
+            footer = f"Fiche {number}/{len(animals)}"
+            if a.wiki_url:
+                footer += " · Source : Wikipédia"
+            card.set_footer(text=footer)
+            cards.append(card)
+        list_pages = paginate(title, lines, color)
+        view = AnimalsView(list_pages, cards, ctx.author.id)
+        view.message = await ctx.send(embed=list_pages[0], view=view, ephemeral=True)
 
     @animals.autocomplete("group")
     async def animals_group_autocomplete(self, interaction: discord.Interaction, current: str):

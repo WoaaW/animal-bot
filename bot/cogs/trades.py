@@ -64,7 +64,7 @@ class TradeView(discord.ui.View):
             for collection in result.lost[member.id]:
                 message += f"\n{member.mention} perd la collection **{collection.label}** (-{collection.bonus} % de revenu de réserve)"
             for milestone in result.milestones_unlocked[member.id]:
-                message += f"\n{member.mention} complète le milestone **{milestone.label}** !"
+                message += f"\n{member.mention} complète le milestone {milestone.badge} **{milestone.label}** !"
             for milestone in result.milestones_lost[member.id]:
                 message += f"\n{member.mention} perd le milestone **{milestone.label}**"
         return message

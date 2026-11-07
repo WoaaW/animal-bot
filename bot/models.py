@@ -94,10 +94,14 @@ class PlayerState(Base):
     claim_slots: Mapped[int] = mapped_column(default=0, server_default="0")
     reserve_slots: Mapped[int] = mapped_column(default=0, server_default="0")
     appeal_level: Mapped[int] = mapped_column(default=0, server_default="0")
-    # Reserve income is paid up to reserve_anchor (a timestamp). What's left
-    # under a full point is kept in reserve_remainder, in point-seconds (/3600).
+    # Reserve income is counted up to reserve_anchor (a timestamp) and banked
+    # in reserve_remainder, in point-seconds (/3600), until /reserve view or
+    # /shop pays it out (the fraction of a point stays banked).
+    # reserve_elapsed: seconds of production counted since that last payout,
+    # capped at RESERVE_CAP_SECONDS.
     reserve_anchor: Mapped[int] = mapped_column(default=0, server_default="0")
     reserve_remainder: Mapped[int] = mapped_column(default=0, server_default="0")
+    reserve_elapsed: Mapped[int] = mapped_column(default=0, server_default="0")
     # Trades used during trades_period (a day index, see economy.py), counted
     # like rolls_used.
     trades_used: Mapped[int] = mapped_column(default=0, server_default="0")

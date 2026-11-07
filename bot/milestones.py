@@ -11,16 +11,16 @@ class Milestone:
     # Scientific names of orders/classes; an animal belongs to the group if its
     # Animal.taxa contains any of them.
     taxa: tuple[str, ...]
-    # Shown on rolls and in /milestones, and on the profile once the prestige this
-    # milestone unlocks is reached. Not a specific animal: it stands for a whole group.
+    # Shown on rolls and in /milestones, and on the profile while the milestone
+    # is complete. Not a specific animal: it stands for a whole group.
     badge: str
 
     def includes(self, animal: Animal) -> bool:
         return bool(animal.taxa) and any(f"|{taxon}|" in animal.taxa for taxon in self.taxa)
 
 
-# Every animal of the pool must fall in exactly one group. The order is also the
-# prestige order: level N requires MILESTONES[N], smallest group first. Fish and reptiles
+# Every animal of the pool must fall in exactly one group, smallest group first.
+# The order was also the (shelved) prestige order: level N required MILESTONES[N]. Fish and reptiles
 # have no usable class: Wikidata splits fish into several classes (Gadiformes
 # has none at all) and nests birds inside Reptilia, so reptiles go by order.
 MILESTONES = [
@@ -50,11 +50,6 @@ def required_milestone(prestige_level: int) -> Milestone | None:
 def milestone_of(animal: Animal) -> Milestone | None:
     """The group an animal belongs to; None only if its taxa are missing."""
     return next((m for m in MILESTONES if m.includes(animal)), None)
-
-
-def earned_badges(prestige_level: int) -> list[Milestone]:
-    """The milestones behind the prestiges a player has passed."""
-    return MILESTONES[:prestige_level]
 
 
 def progress(species: list[Animal], milestone: Milestone) -> int:
