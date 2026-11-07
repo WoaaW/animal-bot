@@ -63,7 +63,7 @@ class Wishes(commands.Cog):
                     )
                 ).scalars()
             )
-        # 🏠 like /animals: already in the player's sanctuary.
+        # 🏠 like /animals: already in the player's reserve.
         lines = [
             f"**{a.name}** — *{a.scientific_name}* ({RARITY_LABEL[a.rarity]}){' · 🏠' if a.id in owned else ''}"
             for a in animals

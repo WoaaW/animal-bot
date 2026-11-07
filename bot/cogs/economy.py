@@ -125,13 +125,13 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
     )
     reserve_maxed = upgrade_maxed("reserve", status.reserve_slots)
     fields["reserve"] = (
-        f"🔺 Place en réserve — {_cost(status, 'reserve')}",
-        f"Expose **{status.max_reserve}** animaux dans ta `/reserve`." if reserve_maxed
-        else f"Expose {status.max_reserve} → **{status.max_reserve + 1}** animaux dans ta `/reserve`.",
+        f"🔺 Place de totem — {_cost(status, 'reserve')}",
+        f"Jusqu'à **{status.max_reserve}** `/totem`." if reserve_maxed
+        else f"Jusqu'à {status.max_reserve} → **{status.max_reserve + 1}** `/totem`.",
     )
     fields["appeal"] = (
-        f"🟣 Attrait niveau {status.appeal_level + 1} — {upgrade_price('appeal', status.appeal_level)} {CURRENCY_NAME}",
-        f"Plus de chances de tirer des animaux avec un bon attrait.\n"
+        f"🟣 Aura niveau {status.appeal_level + 1} — {upgrade_price('appeal', status.appeal_level)} {CURRENCY_NAME}",
+        f"Plus de chances de tirer des animaux avec une bonne aura.\n"
         f"Tes chances : {_format_appeal_odds(appeal_odds(status.appeal_level))}\n"
         f"Au niveau suivant : {_format_appeal_odds(appeal_odds(status.appeal_level + 1))}",
     )
@@ -204,11 +204,11 @@ class ShopView(discord.ui.View):
     async def claims(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._buy(interaction, "claims")
 
-    @discord.ui.button(emoji="🔺", label="Place en réserve", style=discord.ButtonStyle.primary)
+    @discord.ui.button(emoji="🔺", label="Place de totem", style=discord.ButtonStyle.primary)
     async def reserve(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._buy(interaction, "reserve")
 
-    @discord.ui.button(emoji="🟣", label="Attrait", style=discord.ButtonStyle.primary)
+    @discord.ui.button(emoji="🟣", label="Aura", style=discord.ButtonStyle.primary)
     async def appeal(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._buy(interaction, "appeal")
 
@@ -248,11 +248,11 @@ class Economy(commands.Cog):
             + (f" (+{status.bonus_rolls} bonus)" if status.bonus_rolls else "")
             + f" (recharge dans {format_wait(seconds_until_reset())}).\n"
             f"{claims}\n"
-            f"Réserve : **{reserve.used}/{reserve.max_slots}** animaux, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"
+            f"Totems : **{reserve.used}/{reserve.max_slots}**, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"
             + format_reserve_bonus(reserve)
             + ", "
-            f"**{reserve.pending}** en attente (encaisse avec `/reserve` ou `/shop`).\n"
-            f"Niveau de chance : **{status.luck_level}** · niveau d'attrait : **{status.appeal_level}**\n"
+            f"**{reserve.pending}** à récolter (avec `/totem` ou `/shop`).\n"
+            f"Niveau de chance : **{status.luck_level}** · niveau d'aura : **{status.appeal_level}**\n"
             f"Échanges restants aujourd'hui : **{status.trades_left}**",
             ephemeral=True,
         )
@@ -264,14 +264,14 @@ class Economy(commands.Cog):
             return
         await ctx.defer(ephemeral=True)
 
-        # Opening the shop collects the reserve, so its points can be spent.
+        # Opening the shop collects the totems, so their berries can be spent.
         async with SessionLocal() as session:
             paid = await collect_reserve(session, ctx.guild.id, ctx.author.id)
             await session.commit()
             status = await get_status(session, ctx.guild.id, ctx.author.id)
 
         view = ShopView(ctx.author.id, ctx.guild.id, status)
-        content = f"Tu as encaissé **{paid}** {CURRENCY_NAME} grâce à ta réserve !" if paid else None
+        content = f"Tu as récolté **{paid}** {CURRENCY_NAME} grâce à tes totems !" if paid else None
         view.message = await ctx.send(content, embed=shop_embed(status), view=view, ephemeral=True)
 
 

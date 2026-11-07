@@ -8,7 +8,7 @@ from ..economy import CURRENCY_NAME, animal_score, completed_milestones, get_res
 from ..milestones import MILESTONES
 from ..models import Animal, Rescue
 from ..species_collections import COLLECTIONS, completed, rescued_species
-from .reserve import _income, _rescues
+from .totems import _income, _rescues
 from .rolls import animal_embed, animal_header, format_appeal, format_rate, format_reserve_bonus
 
 
@@ -18,8 +18,8 @@ def _animal_page(row: tuple[Rescue, Animal], number: int, total: int) -> discord
     # Just the photo and the facts: descriptions are too long for a profile.
     embed.description = animal_header(animal)
     embed.add_field(
-        name="Attrait",
-        value=f"{format_appeal(rescue.appeal)} · {reserve_income(animal.rarity, rescue.appeal)} {CURRENCY_NAME}/h dans la réserve",
+        name="Aura",
+        value=f"{format_appeal(rescue.appeal)} · {reserve_income(animal.rarity, rescue.appeal)} {CURRENCY_NAME}/h comme totem",
         inline=False,
     )
     # Keeps the Wikipedia credit animal_embed sets.
@@ -71,7 +71,7 @@ class Profile(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="profile", description="Affiche le profil d'un joueur : badges de milestones et réserve.")
+    @commands.hybrid_command(name="profile", description="Affiche le profil d'un joueur : badges de milestones et totems.")
     @app_commands.describe(member="Le joueur à afficher (toi par défaut)")
     @app_commands.guild_only()
     async def profile(self, ctx: commands.Context, member: discord.Member | None = None):
@@ -99,7 +99,7 @@ class Profile(commands.Cog):
                 + (f" (+{milestone_bonus(len(reached))} % de {CURRENCY_NAME})" if reached else "")
                 + f"\nBadges : {badges}\n"
                 f"Espèces : **{len(species)}/{pool_size}** · collections : **{len(completed(species))}/{len(COLLECTIONS)}**\n"
-                f"Réserve : **{reserve.used}/{reserve.max_slots}** animaux, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"
+                f"Totems : **{reserve.used}/{reserve.max_slots}**, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"
                 + format_reserve_bonus(reserve)
             ),
             color=discord.Color.gold(),

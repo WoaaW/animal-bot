@@ -21,7 +21,7 @@ class Collections(commands.Cog):
 
     @commands.hybrid_command(
         name="collections",
-        description="Tes collections : réunis des familles d'animaux pour augmenter le revenu de ta réserve.",
+        description="Tes collections : réunis des familles d'animaux pour augmenter le revenu de tes totems.",
     )
     @app_commands.describe(group="Voir les espèces d'un groupe")
     async def collections(self, ctx: commands.Context, *, group: str | None = None):
@@ -63,7 +63,7 @@ class Collections(commands.Cog):
     @staticmethod
     def _overview(member: discord.abc.User, species: list[Animal]) -> discord.Embed:
         embed = discord.Embed(
-            title=f"Collections de {member.display_name} · +{total_bonus(species)} % de revenu de réserve",
+            title=f"Collections de {member.display_name} · +{total_bonus(species)} % de revenu des totems",
             description=(
                 f"Sauve {COLLECTION_TARGET} espèces différentes d'un groupe pour compléter sa collection. "
                 "Les espèces d'un groupe : `/collections <groupe>`."

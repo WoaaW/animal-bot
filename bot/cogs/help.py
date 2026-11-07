@@ -18,7 +18,7 @@ class Help(commands.Cog):
                 continue
             if isinstance(command, commands.HybridGroup):
                 # A slash group runs its own callback as its fallback
-                # subcommand (/reserve view), then come the others.
+                # subcommand (/totem view), then come the others.
                 if command.fallback:
                     lines.append(f"**/{command.name} {command.fallback}** — {command.description}")
                 for sub in sorted(command.commands, key=lambda c: c.name):

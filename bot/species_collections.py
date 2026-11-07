@@ -39,24 +39,26 @@ class Collection:
 
 
 COLLECTIONS = [
-    Collection("Lézards et serpents", ("Squamata",), "easy"),
+    Collection("Squamates", ("Squamata",), "easy"),
     Collection("Rongeurs", ("Rodentia",), "easy"),
-    Collection("Félins", ("Felidae",), "easy"),
+    Collection("Félidés", ("Felidae",), "easy"),
     Collection("Bovidés", ("Bovidae",), "easy"),
-    Collection("Rapaces", ("Accipitriformes", "Falconiformes"), "easy"),
+    # Diurnal raptors minus the falcons (Falconiformes, closer to parrots):
+    # hawks and eagles, New World vultures, osprey and secretary bird.
+    Collection("Accipitriformes", ("Accipitriformes",), "easy"),
     Collection("Primates", ("Primates",), "easy"),
-    Collection("Perroquets", ("Psittaciformes",), "easy"),
-    Collection("Grenouilles et crapauds", ("Anura",), "easy"),
+    Collection("Psittaciformes", ("Psittaciformes",), "easy"),
+    Collection("Anoures", ("Anura",), "easy"),
     Collection("Canidés", ("Canidae",), "easy"),
     Collection("Mustélidés", ("Mustelidae",), "medium"),
     Collection("Insectes", ("Insecta",), "medium"),
-    Collection("Canards, oies et cygnes", ("Anatidae",), "medium"),
-    Collection("Phoques", ("Phocidae",), "medium"),
-    Collection("Chouettes et hiboux", ("Strigiformes",), "medium"),
-    Collection("Manchots", ("Spheniscidae",), "medium"),
-    Collection("Tortues", ("Testudines",), "medium"),
-    Collection("Chauves-souris", ("Chiroptera",), "hard"),
-    Collection("Requins et raies", ("Chondrichthyes",), "medium"),
+    Collection("Anatidés", ("Anatidae",), "medium"),
+    Collection("Phocidés", ("Phocidae",), "medium"),
+    Collection("Strigiformes", ("Strigiformes",), "medium"),
+    Collection("Sphénisciformes", ("Spheniscidae",), "medium"),
+    Collection("Chéloniens", ("Testudines",), "medium"),
+    Collection("Chiroptères", ("Chiroptera",), "hard"),
+    Collection("Chondrichtyens", ("Chondrichthyes",), "medium"),
     Collection(
         "Marsupiaux",
         ("Diprotodontia", "Dasyuromorphia", "Didelphimorphia", "Peramelemorphia",
@@ -65,10 +67,16 @@ COLLECTIONS = [
     ),
     Collection("Cervidés", ("Cervidae",), "medium"),
     Collection("Corvidés", ("Corvidae",), "hard"),
-    # River dolphins have families of their own.
-    Collection("Dauphins", ("Delphinidae", "Iniidae", "Platanistidae", "Pontoporiidae", "Lipotidae"), "medium"),
-    Collection("Rhinocéros, chevaux et tapirs", ("Perissodactyla",), "very_hard"),
-    Collection("Ours", ("Ursidae",), "very_hard"),
+    # Toothed whales. Odontoceti is a suborder, a rank the seed doesn't fetch
+    # (TAXON_RANKS), so list its families.
+    Collection(
+        "Odontocètes",
+        ("Delphinidae", "Iniidae", "Platanistidae", "Pontoporiidae", "Lipotidae",
+         "Phocoenidae", "Physeteridae", "Kogiidae", "Ziphiidae", "Monodontidae"),
+        "medium",
+    ),
+    Collection("Périssodactyles", ("Perissodactyla",), "very_hard"),
+    Collection("Ursidés", ("Ursidae",), "very_hard"),
     Collection("Crocodiliens", ("Crocodilia",), "very_hard"),
     Collection("Grands singes", ("Hominidae",), "extreme"),
 ]

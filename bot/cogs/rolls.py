@@ -219,7 +219,7 @@ def add_collections_field(embed: discord.Embed, animal: Animal, species: list[An
 
 class RescueView(discord.ui.View):
     """Buttons under a roll. Any animal can be rescued, even one already in
-    someone's sanctuary (or the clicker's own), but only once per roll, and
+    someone's reserve (or the clicker's own), but only once per roll, and
     only by the roller during the first ROLL_PROTECTION_SECONDS."""
 
     def __init__(self, animal: Animal, guild_id: int, appeal: int, roller_id: int):
@@ -295,7 +295,7 @@ class RescueView(discord.ui.View):
             f"{rarity_initials(self.animal.rarity)} ({format_appeal(self.appeal)}) !"
         )
         for collection in unlocked:
-            message += f"\nCollection complétée : **{collection.label}** (+{collection.bonus} % de revenu de réserve)"
+            message += f"\nCollection complétée : **{collection.label}** (+{collection.bonus} % de revenu des totems)"
         for milestone in reached:
             message += (
                 f"\nMilestone complété : {milestone.badge} **{milestone.label}** "
@@ -324,7 +324,7 @@ class RescueView(discord.ui.View):
 PAGE_SIZE = 20
 # Rescuers named per animal in /animals; the rest are just counted.
 MAX_RESCUERS_SHOWN = 3
-# Copies of one animal whose appeal /sanctuary lists; the rest are just counted.
+# Copies of one animal whose appeal /reserve lists; the rest are just counted.
 MAX_COPIES_SHOWN = 5
 # Rarest first in listings.
 RARITY_ORDER = {tier: i for i, tier in enumerate(reversed(RARITY_ODDS))}
@@ -529,8 +529,8 @@ class Rolls(commands.Cog):
         # with a better appeal, which makes rescuing it again worthwhile.
         appeal = roll_appeal(status.appeal_level)
         embed.add_field(
-            name="Attrait",
-            value=f"{format_appeal(appeal)} · {reserve_income(animal.rarity, appeal)} {CURRENCY_NAME}/h dans la réserve",
+            name="Aura",
+            value=f"{format_appeal(appeal)} · {reserve_income(animal.rarity, appeal)} {CURRENCY_NAME}/h comme totem",
             inline=False,
         )
         # The collection groups this animal counts for, with the roller's
@@ -541,7 +541,7 @@ class Rolls(commands.Cog):
             if len(owned) > MAX_COPIES_SHOWN:
                 copies += f"\n+{len(owned) - MAX_COPIES_SHOWN} autres"
             embed.add_field(
-                name=f"Déjà dans ton sanctuaire (×{len(owned)})",
+                name=f"Déjà dans ta réserve (×{len(owned)})",
                 value=copies,
                 inline=False,
             )
@@ -575,8 +575,8 @@ class Rolls(commands.Cog):
         ctx = await commands.Context.from_interaction(interaction)
         await self.rescue.callback(self, ctx)
 
-    @commands.hybrid_command(name="sanctuary", description="Affiche les animaux que tu as sauvés.")
-    async def sanctuary(self, ctx: commands.Context):
+    @commands.hybrid_command(name="reserve", description="Affiche ta réserve : les animaux que tu as sauvés.")
+    async def reserve(self, ctx: commands.Context):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
             return
@@ -601,8 +601,8 @@ class Rolls(commands.Cog):
         # One section per rarity, rarest first; in each, one line per species,
         # best appeal first (then by first rescue: rows come sorted by date
         # and the sorts are stable). Each line has its first rescue date, each
-        # copy's appeal (best first), and 🔺 (the shop's reserve icon) before
-        # the name if a copy is in the reserve.
+        # copy's appeal (best first), and 🔺 (the shop's totem icon) before
+        # the name if a copy is a totem.
         copies: dict[int, tuple[Animal, list[Rescue]]] = {}
         for a, rescue in rows:
             copies.setdefault(a.id, (a, []))[1].append(rescue)
@@ -626,7 +626,7 @@ class Rolls(commands.Cog):
             (f"__**{RARITY_LABEL[tier].capitalize()}**__ ({len(lines)})", lines)
             for tier, lines in sections.items()
         ]
-        pages = paginate_sections(f"Sanctuaire de {ctx.author.display_name} ({total})", headers, discord.Color.green())
+        pages = paginate_sections(f"Réserve de {ctx.author.display_name} ({total})", headers, discord.Color.green())
         await send_pages(ctx, pages)
 
     @commands.hybrid_command(name="animals", description="Liste tous les animaux, des plus communs aux plus rares.")
@@ -634,7 +634,7 @@ class Rolls(commands.Cog):
     @app_commands.choices(rarity=[app_commands.Choice(name=RARITY_LABEL[t].capitalize(), value=t) for t in RARITY_ODDS])
     async def animals(self, ctx: commands.Context, rarity: str | None = None, *, group: str | None = None):
         if ctx.interaction is None:
-            # Typed by hand ("!animals peu commun félins"): the words don't
+            # Typed by hand ("!animals peu commun félidés"): the words don't
             # split cleanly into the two parameters, so parse the whole text.
             rarity, group = _parse_animals_filter(" ".join(filter(None, [rarity, group])))
         elif rarity is not None and rarity not in RARITY_ODDS:

@@ -74,7 +74,7 @@ class Milestones(commands.Cog):
             description=(
                 "Sauve toutes les espèces d'un groupe pour compléter son milestone : "
                 f"tu gagnes son badge et +{MILESTONE_POINTS_BONUS} % de {CURRENCY_NAME} "
-                "(rolls et réserve) tant que tu gardes toutes ses espèces. "
+                "(rolls et totems) tant que tu gardes toutes ses espèces. "
                 "Les espèces d'un groupe : `/milestones <groupe>`.\n\n"
                 + "\n".join(lines)
             ),

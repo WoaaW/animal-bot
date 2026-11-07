@@ -12,7 +12,7 @@ from ..economy import (
     seconds_until_trade_reset,
 )
 from ..models import Animal, Rescue
-from .reserve import _choices, _income, _label, _rescues
+from .totems import _choices, _income, _label, _rescues
 from .rolls import _fold, format_wait
 
 TRADE_TIMEOUT_SECONDS = 300
@@ -60,9 +60,9 @@ class TradeView(discord.ui.View):
         message = f"Échange conclu entre {self.author.mention} et {self.target.mention} !"
         for member in (self.author, self.target):
             for collection in result.unlocked[member.id]:
-                message += f"\n{member.mention} complète la collection **{collection.label}** (+{collection.bonus} % de revenu de réserve)"
+                message += f"\n{member.mention} complète la collection **{collection.label}** (+{collection.bonus} % de revenu des totems)"
             for collection in result.lost[member.id]:
-                message += f"\n{member.mention} perd la collection **{collection.label}** (-{collection.bonus} % de revenu de réserve)"
+                message += f"\n{member.mention} perd la collection **{collection.label}** (-{collection.bonus} % de revenu des totems)"
             for milestone in result.milestones_unlocked[member.id]:
                 message += f"\n{member.mention} complète le milestone {milestone.badge} **{milestone.label}** !"
             for milestone in result.milestones_lost[member.id]:
@@ -72,7 +72,7 @@ class TradeView(discord.ui.View):
     def _failure_text(self, result: TradeResult) -> str:
         who = f"<@{result.failed_user_id}>"
         if result.failure == "reserve":
-            return f"Échange impossible : l'animal de {who} est dans sa réserve (`/reserve remove`). L'offre reste ouverte."
+            return f"Échange impossible : l'animal de {who} est un de ses totems (`/totem remove`). L'offre reste ouverte."
         if result.failure == "limit":
             return (
                 f"Échange impossible : {who} a déjà fait ses {MAX_TRADES_PER_DAY} échanges du jour "
@@ -183,7 +183,7 @@ class Trades(commands.Cog):
                 await ctx.send(f"Tu n'as aucun « {offer.give_animal} ».")
                 return
             if given[0].in_reserve:
-                await ctx.send(f"**{given[1].name}** est dans ta réserve : retire-le d'abord avec `/reserve remove`.")
+                await ctx.send(f"**{given[1].name}** est un de tes totems : retire-le d'abord avec `/totem remove`.")
                 return
         if offer.want_animal:
             wanted = _pick_copy(await _rescues(ctx.guild.id, member.id), offer.want_animal)
@@ -195,7 +195,7 @@ class Trades(commands.Cog):
                 return
             if wanted[0].in_reserve:
                 await ctx.send(
-                    f"**{wanted[1].name}** est dans la réserve de {member.mention}, qui doit d'abord l'en retirer.",
+                    f"**{wanted[1].name}** est un totem de {member.mention}, qui doit d'abord le retirer.",
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
                 return

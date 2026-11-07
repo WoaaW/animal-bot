@@ -112,8 +112,8 @@ class Prestige(commands.Cog):
             return
         view = PrestigeView(ctx.guild.id, ctx.author.id, level)
         view.message = await ctx.send(
-            text + f"**Attention :** tu perdras tes {CURRENCY_NAME}, ce que ta réserve n'a pas encore encaissé, "
-            "tes améliorations et **tous tes animaux hors de ta réserve**. Ta réserve et ses places sont conservées. "
+            text + f"**Attention :** tu perdras tes {CURRENCY_NAME}, ce que tes totems n'ont pas encore récolté, "
+            "tes améliorations et **tous tes animaux qui ne sont pas des totems**. Tes totems et leurs places sont conservés. "
             "Cette action est définitive.",
             view=view,
             ephemeral=True,

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from ..db import SessionLocal
 from ..economy import (
     CURRENCY_NAME,
+    CURRENCY_WORD,
     RESERVE_CAP_SECONDS,
     collect_reserve,
     get_reserve_status,
@@ -39,7 +40,7 @@ def _label(row: tuple[Rescue, Animal]) -> str:
 
 
 def _pick(rows: list[tuple[Rescue, Animal]], query: str, *, in_reserve: bool) -> tuple[Rescue, Animal] | None:
-    """The rescue `query` names among those in (or out of) the reserve.
+    """The rescue `query` names among the totems (or the other animals).
     Autocomplete sends "#<rescue id>"; a typed name picks the best copy to
     put in, or the weakest one to take out."""
     rows = [row for row in rows if row[0].in_reserve == in_reserve]
@@ -60,24 +61,28 @@ def _choices(rows: list[tuple[Rescue, Animal]], current: str, *, in_reserve: boo
     return [app_commands.Choice(name=_label(row)[:100], value=f"#{row[0].id}") for row in rows[:25]]
 
 
-class Reserve(commands.Cog):
+class Totems(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    # Players see the income reserve as "totems": animals picked among
+    # those rescued, which bring berries every hour. Code still calls it the
+    # reserve (in_reserve, reserve_income…); the /reserve command is the
+    # list of rescued animals, in rolls.py.
     # A slash group can't be run by itself, so fallback="view" makes it
-    # /reserve view (and plain !reserve on the prefix side).
+    # /totem view (and plain !totem on the prefix side).
     @commands.hybrid_group(
-        name="reserve",
+        name="totem",
         fallback="view",
-        description=f"Ta réserve : les animaux exposés y rapportent des {CURRENCY_NAME} chaque heure.",
+        description=f"Tes animaux totems : ils te rapportent des {CURRENCY_WORD} chaque heure.",
     )
-    async def reserve(self, ctx: commands.Context):
+    async def totem(self, ctx: commands.Context):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
             return
         await ctx.defer()
 
-        # Opening the reserve collects what it earned.
+        # Opening the totems collects what they earned.
         async with SessionLocal() as session:
             paid = await collect_reserve(session, ctx.guild.id, ctx.author.id)
             await session.commit()
@@ -88,22 +93,22 @@ class Reserve(commands.Cog):
         lines = [f"**{animal.name}** {format_appeal(rescue.appeal)} · {_income((rescue, animal))} {CURRENCY_NAME}/h"
                  for rescue, animal in rows]
         if not lines:
-            lines = ["Vide ! Expose tes animaux sauvés avec `/reserve add`."]
-        title = f"Réserve de {ctx.author.display_name} ({status.used}/{status.max_slots}) · {format_rate(status.rate)} {CURRENCY_NAME}/h"
+            lines = ["Aucun totem ! Choisis-en parmi les animaux de ta réserve avec `/totem add`."]
+        title = f"Totems de {ctx.author.display_name} ({status.used}/{status.max_slots}) · {format_rate(status.rate)} {CURRENCY_NAME}/h"
         title += format_reserve_bonus(status)
         pages = paginate(title, lines, discord.Color.dark_green())
         for page in pages:
             page.add_field(
                 name="​",
-                value=f"-# Les visiteurs paient pendant {format_wait(RESERVE_CAP_SECONDS)} au maximum, puis attendent que tu encaisses.",
+                value=f"-# Tes totems produisent pendant {format_wait(RESERVE_CAP_SECONDS)} au maximum, puis attendent que tu récoltes.",
                 inline=False,
             )
-        content = f"Tu as encaissé **{paid}** {CURRENCY_NAME} grâce à ta réserve !" if paid else None
+        content = f"Tu as récolté **{paid}** {CURRENCY_NAME} grâce à tes totems !" if paid else None
         await send_pages(ctx, pages, content=content)
 
-    @reserve.command(name="add", description="Expose un de tes animaux sauvés dans ta réserve.")
-    @app_commands.describe(animal="L'animal à exposer")
-    async def reserve_add(self, ctx: commands.Context, *, animal: str):
+    @totem.command(name="add", description="Fais d'un de tes animaux sauvés un totem.")
+    @app_commands.describe(animal="L'animal qui devient totem")
+    async def totem_add(self, ctx: commands.Context, *, animal: str):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
             return
@@ -111,7 +116,7 @@ class Reserve(commands.Cog):
 
         row = _pick(await _rescues(ctx.guild.id, ctx.author.id), animal, in_reserve=False)
         if row is None:
-            await ctx.send(f"Tu n'as aucun « {animal} » hors de ta réserve.", ephemeral=True)
+            await ctx.send(f"Tu n'as aucun « {animal} » qui ne soit pas déjà un totem.", ephemeral=True)
             return
         async with SessionLocal() as session:
             placed = await place_in_reserve(session, ctx.guild.id, ctx.author.id, row[0].id)
@@ -120,20 +125,20 @@ class Reserve(commands.Cog):
 
         if not placed:
             await ctx.send(
-                f"Ta réserve est pleine ({status.max_slots} animaux max) ! "
-                "Retires-en un avec `/reserve remove`, ou achète plus de place dans le `/shop`.",
+                f"Tu as déjà {status.max_slots} totems, le maximum ! "
+                "Retires-en un avec `/totem remove`, ou achète une place de totem dans le `/shop`.",
                 ephemeral=True,
             )
             return
         await ctx.send(
-            f"Dans ta réserve : **{_label(row)}**. Elle rapporte {format_rate(status.rate)} {CURRENCY_NAME}/h "
+            f"Nouveau totem : **{_label(row)}**. Tes totems rapportent {format_rate(status.rate)} {CURRENCY_NAME}/h "
             f"({status.used}/{status.max_slots}).",
             ephemeral=True,
         )
 
-    @reserve.command(name="remove", description="Retire un animal de ta réserve.")
-    @app_commands.describe(animal="L'animal à retirer")
-    async def reserve_remove(self, ctx: commands.Context, *, animal: str):
+    @totem.command(name="remove", description="Retire un de tes totems.")
+    @app_commands.describe(animal="Le totem à retirer")
+    async def totem_remove(self, ctx: commands.Context, *, animal: str):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
             return
@@ -141,7 +146,7 @@ class Reserve(commands.Cog):
 
         row = _pick(await _rescues(ctx.guild.id, ctx.author.id), animal, in_reserve=True)
         if row is None:
-            await ctx.send(f"Il n'y a aucun « {animal} » dans ta réserve.", ephemeral=True)
+            await ctx.send(f"Aucun de tes totems ne s'appelle « {animal} ».", ephemeral=True)
             return
         async with SessionLocal() as session:
             removed = await remove_from_reserve(session, ctx.guild.id, ctx.author.id, row[0].id)
@@ -149,26 +154,26 @@ class Reserve(commands.Cog):
             status = await get_reserve_status(session, ctx.guild.id, ctx.author.id)
 
         if not removed:
-            await ctx.send(f"Il n'y a aucun « {animal} » dans ta réserve.", ephemeral=True)
+            await ctx.send(f"Aucun de tes totems ne s'appelle « {animal} ».", ephemeral=True)
             return
         await ctx.send(
-            f"Retour au sanctuaire : **{row[1].name}**. Ta réserve rapporte {format_rate(status.rate)} {CURRENCY_NAME}/h "
+            f"**{row[1].name}** n'est plus un totem. Tes totems rapportent {format_rate(status.rate)} {CURRENCY_NAME}/h "
             f"({status.used}/{status.max_slots}).",
             ephemeral=True,
         )
 
-    @reserve_add.autocomplete("animal")
-    async def reserve_add_autocomplete(self, interaction: discord.Interaction, current: str):
+    @totem_add.autocomplete("animal")
+    async def totem_add_autocomplete(self, interaction: discord.Interaction, current: str):
         if interaction.guild is None:
             return []
         return _choices(await _rescues(interaction.guild.id, interaction.user.id), current, in_reserve=False)
 
-    @reserve_remove.autocomplete("animal")
-    async def reserve_remove_autocomplete(self, interaction: discord.Interaction, current: str):
+    @totem_remove.autocomplete("animal")
+    async def totem_remove_autocomplete(self, interaction: discord.Interaction, current: str):
         if interaction.guild is None:
             return []
         return _choices(await _rescues(interaction.guild.id, interaction.user.id), current, in_reserve=True)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Reserve(bot))
+    await bot.add_cog(Totems(bot))

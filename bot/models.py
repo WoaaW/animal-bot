@@ -95,7 +95,7 @@ class PlayerState(Base):
     reserve_slots: Mapped[int] = mapped_column(default=0, server_default="0")
     appeal_level: Mapped[int] = mapped_column(default=0, server_default="0")
     # Reserve income is counted up to reserve_anchor (a timestamp) and banked
-    # in reserve_remainder, in point-seconds (/3600), until /reserve view or
+    # in reserve_remainder, in point-seconds (/3600), until /totem view or
     # /shop pays it out (the fraction of a point stays banked).
     # reserve_elapsed: seconds of production counted since that last payout,
     # capped at RESERVE_CAP_SECONDS.

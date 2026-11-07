@@ -48,7 +48,7 @@ async def main():
     async with bot:
         await bot.load_extension("bot.cogs.rolls")
         await bot.load_extension("bot.cogs.economy")
-        await bot.load_extension("bot.cogs.reserve")
+        await bot.load_extension("bot.cogs.totems")
         await bot.load_extension("bot.cogs.species_collections")
         await bot.load_extension("bot.cogs.milestones")
         # Prestige is shelved: milestones give their badge and bonus directly.

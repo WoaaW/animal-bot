@@ -432,7 +432,7 @@ async def bank_reserve(session: AsyncSession, guild_id: int, user_id: int) -> No
     and bank it without paying it out. Runs before every change to the reserve
     and before every rescue or trade (which can complete or break a
     collection), so neither an animal nor a bonus ever earns for time it
-    wasn't there. Only /reserve view and /shop pay (collect_reserve), so
+    wasn't there. Only /totem view and /shop pay (collect_reserve), so
     players see everything they earned there. Doesn't commit."""
     now = int(time.time())
     await _ensure_player(session, guild_id, user_id)
@@ -532,7 +532,7 @@ class TradeResult:
 
 async def _give_rescue(session: AsyncSession, guild_id: int, rescue_id: int, from_id: int, to_id: int) -> str | None:
     """Hand a rescue over; returns the failure reason, if any. The date becomes
-    the transfer's, as /sanctuary shows when the owner got the animal."""
+    the transfer's, as /reserve shows when the owner got the animal."""
     result = await session.execute(
         update(Rescue)
         .where(Rescue.id == rescue_id, Rescue.guild_id == guild_id, Rescue.user_id == from_id, ~Rescue.in_reserve)
