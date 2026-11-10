@@ -67,15 +67,17 @@ BASE_RESERVE_SLOTS = 1
 RESERVE_CAP_SECONDS = 12 * 3600
 
 # Shop upgrades: (PlayerState column holding the level, price of level 0 → 1,
-# price growth per level, max level or None). Every level is
-# pricier than the last. Caps are written as totals minus the default, so the
-# total stays the same if a default changes.
+# price exponent, max level or None). Price grows as a power of the level
+# (see upgrade_price), not exponentially: income grows roughly linearly, so
+# each level costs more than the last but the step between levels shrinks.
+# Caps are written as totals minus the default, so the total stays the same
+# if a default changes.
 UPGRADES = {
-    "rolls": (PlayerState.extra_rolls, 100, 1.5, 25 - BASE_ROLLS),   # +1 roll per window, up to 25
-    "luck": (PlayerState.luck_level, 150, 2, 10),                    # see rarity_odds in cogs/rolls.py
-    "claims": (PlayerState.claim_slots, 500, 2, 6 - BASE_CLAIMS),    # +1 claim that can be stored, up to 6
-    "reserve": (PlayerState.reserve_slots, 1000, 2, 5 - BASE_RESERVE_SLOTS),  # +1 animal, up to 5
-    "appeal": (PlayerState.appeal_level, 2000, 2, None),             # see appeal_odds
+    "luck": (PlayerState.luck_level, 150, 2.5, 10),                  # see rarity_odds in cogs/rolls.py
+    "rolls": (PlayerState.extra_rolls, 1000, 1.3, 25 - BASE_ROLLS),  # +1 roll per window, up to 25
+    "reserve": (PlayerState.reserve_slots, 1500, 2, 5 - BASE_RESERVE_SLOTS),  # +1 animal, up to 5
+    "claims": (PlayerState.claim_slots, 2000, 1.5, 6 - BASE_CLAIMS),  # +1 claim that can be stored, up to 6
+    "appeal": (PlayerState.appeal_level, 4000, 1.2, None),           # see appeal_odds; uncapped, so a flat curve
 }
 
 
@@ -125,8 +127,8 @@ async def completed_milestones(session: AsyncSession, guild_id: int, user_id: in
 
 def upgrade_price(upgrade: str, level: int) -> int:
     """Price of going from `level` to `level + 1`."""
-    _, base, growth, _ = UPGRADES[upgrade]
-    return round(base * growth**level)
+    _, base, exponent, _ = UPGRADES[upgrade]
+    return round(base * (level + 1) ** exponent)
 
 
 def upgrade_max_level(upgrade: str) -> int | None:

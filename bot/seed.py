@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -59,6 +60,31 @@ WIKIPEDIA_BATCH = 20
 # originals can weigh several MB, which Discord is slow to load. Wikimedia serves
 # thumbnails in fixed size steps (…, 500, 960, 1280…): stick to one of them.
 IMAGE_SIZE = 960
+# A Wikimedia Commons original: upload.wikimedia.org/wikipedia/commons/a/ab/File.jpg
+COMMONS_ORIGINAL = re.compile(r"^https://upload\.wikimedia\.org/wikipedia/commons/([0-9a-f])/([0-9a-f]{2})/([^/?#]+)")
+
+
+THUMB_HOST = "https://thumb.wikimedia.org"
+
+
+def thumbnail_url(url: str) -> str:
+    """The IMAGE_SIZE thumbnail of a Commons image, served from thumb.wikimedia.org;
+    other URLs unchanged except for the API's utm_* tracking query. The API
+    hands back the original (on upload.wikimedia.org) when it's smaller than
+    IMAGE_SIZE, and Discord fails to show those, while thumbnails from
+    thumb.wikimedia.org load fine (even upscaled past the original)."""
+    url = url.split("?", 1)[0]
+    if url.startswith("https://upload.wikimedia.org/wikipedia/commons/thumb/"):
+        return THUMB_HOST + url.removeprefix("https://upload.wikimedia.org")
+    match = COMMONS_ORIGINAL.match(url)
+    if match is None:
+        return url
+    a, ab, name = match.groups()
+    # SVGs and TIFFs are rendered: their thumbnails are PNG / JPEG files.
+    suffix = {".svg": ".png", ".tif": ".jpg", ".tiff": ".jpg"}.get(Path(name).suffix.lower(), "")
+    return f"{THUMB_HOST}/wikipedia/commons/thumb/{a}/{ab}/{name}/{IMAGE_SIZE}px-{name}{suffix}"
+
+
 WIKIDATA_BATCH = 200
 # Walking up the taxonomy (P171*) is heavier, so fewer items per query.
 TAXA_BATCH = 100
@@ -257,6 +283,10 @@ async def seed() -> None:
                 value = entry.get(field)
                 if not value and not getattr(current, field):
                     value = fetched.get(field)
+                if field == "image_url":
+                    # Also rewrites URLs stored before thumbnail_url existed.
+                    value = value or current.image_url
+                    value = value and thumbnail_url(value)
                 if value and getattr(current, field) != value:
                     setattr(current, field, value)
                     changed.append(field)

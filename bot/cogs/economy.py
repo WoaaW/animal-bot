@@ -7,6 +7,7 @@ from ..economy import (
     CLAIM_REGEN_SECONDS,
     CURRENCY_NAME,
     CURRENCY_WORD,
+    UPGRADES,
     PlayerStatus,
     appeal_odds,
     buy_upgrade,
@@ -68,11 +69,12 @@ def _progress(status: PlayerStatus, upgrade: str) -> str:
     return f"`|{'*' * level}{'-' * (max_level - level)}|` {level}/{max_level}"
 
 
-# Shop order. The ones after ALWAYS_SHOWN stay hidden until the player has
-# once had enough points for their first level (peak_points), so the shop
-# unfolds bit by bit and never folds back.
-SHOP_ORDER = ("rolls", "luck", "claims", "reserve", "appeal")
-ALWAYS_SHOWN = {"rolls", "luck"}
+# Shop order: cheapest first level first, the order they unlock in. The ones
+# not in ALWAYS_SHOWN stay hidden until the player has once had enough points
+# for their first level (peak_points), so the shop unfolds bit by bit and
+# never folds back.
+SHOP_ORDER = sorted(UPGRADES, key=lambda upgrade: upgrade_price(upgrade, 0))
+ALWAYS_SHOWN = {"luck"}
 
 
 def visible_upgrades(status: PlayerStatus) -> list[str]:

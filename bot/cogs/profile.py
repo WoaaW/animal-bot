@@ -19,7 +19,7 @@ def _animal_page(row: tuple[Rescue, Animal], number: int, total: int) -> discord
     embed.description = animal_header(animal)
     embed.add_field(
         name="Aura",
-        value=f"{format_appeal(rescue.appeal)} · {reserve_income(animal.rarity, rescue.appeal)} {CURRENCY_NAME}/h comme totem",
+        value=f"{format_appeal(rescue.appeal)} · {reserve_income(animal.rarity, rescue.appeal)} {CURRENCY_NAME}/h comme animal-totem",
         inline=False,
     )
     # Keeps the Wikipedia credit animal_embed sets.

@@ -530,7 +530,7 @@ class Rolls(commands.Cog):
         appeal = roll_appeal(status.appeal_level)
         embed.add_field(
             name="Aura",
-            value=f"{format_appeal(appeal)} · {reserve_income(animal.rarity, appeal)} {CURRENCY_NAME}/h comme totem",
+            value=f"{format_appeal(appeal)} · {reserve_income(animal.rarity, appeal)} {CURRENCY_NAME}/h comme animal-totem",
             inline=False,
         )
         # The collection groups this animal counts for, with the roller's
@@ -709,7 +709,7 @@ class Rolls(commands.Cog):
                 names = ", ".join(f"<@{u}>" for u in rescuers[:MAX_RESCUERS_SHOWN])
                 if len(rescuers) > MAX_RESCUERS_SHOWN:
                     names += f" +{len(rescuers) - MAX_RESCUERS_SHOWN}"
-                card.add_field(name="🏠 Sauvé ici par", value=names, inline=False)
+                card.add_field(name="🏠 Sauvé par", value=names, inline=False)
             footer = f"Fiche {number}/{len(animals)}"
             if a.wiki_url:
                 footer += " · Source : Wikipédia"
