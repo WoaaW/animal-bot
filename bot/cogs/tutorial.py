@@ -67,8 +67,8 @@ def _pages() -> list[discord.Embed]:
             f"· Il t'en revient 1 {_every(CLAIM_REGEN_SECONDS)}, et tu peux en garder "
             f"{BASE_CLAIMS} d'avance (plus avec le `/shop`). "
             "Garde-le pour un animal qui en vaut la peine !\n"
-            f"· Pendant {ROLL_PROTECTION_SECONDS} s, seul celui qui a lancé le roll peut sauver l'animal. "
-            f"Ensuite, n'importe qui peut le faire, jusqu'à {ROLL_TIMEOUT_SECONDS} s.\n"
+            f"· Pendant {format_wait(ROLL_PROTECTION_SECONDS)}, seul celui qui a lancé le roll peut sauver l'animal. "
+            f"Ensuite, n'importe qui peut le faire, jusqu'à {format_wait(ROLL_TIMEOUT_SECONDS)}.\n"
             "· Un même animal peut être sauvé plusieurs fois, par toi ou par d'autres : "
             "une deuxième copie avec une meilleure aura peut valoir le coup.\n\n"
             "`/reserve` montre tous les animaux que tu as sauvés.",
@@ -109,7 +109,7 @@ def _pages() -> list[discord.Embed]:
             "7) Trades et wishes",
             f"· `/wish add <animal>` : ajoute jusqu'à {MAX_WISHES} animaux à ta wishlist. "
             "Tu es mentionné quand quelqu'un d'autre les tire, pour tenter de les sauver après "
-            f"les {ROLL_PROTECTION_SECONDS} s de protection.\n"
+            f"les {format_wait(ROLL_PROTECTION_SECONDS)} de protection.\n"
             "· `/trade <membre>` : propose un échange d'animaux, ou fais un cadeau. "
             f"{MAX_TRADES_PER_DAY} échanges par jour. Un totem doit être retiré avant d'être échangé.\n"
             "· `/profile` : ton profil, tes badges, tes totems et ton score.",

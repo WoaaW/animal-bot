@@ -91,8 +91,8 @@ IUCN_LABEL = {
 
 # A roll's buttons stay up ROLL_TIMEOUT_SECONDS. For the first
 # ROLL_PROTECTION_SECONDS, only the roller can rescue; then anyone can.
-ROLL_TIMEOUT_SECONDS = 60
-ROLL_PROTECTION_SECONDS = 30
+ROLL_TIMEOUT_SECONDS = 120
+ROLL_PROTECTION_SECONDS = 60
 assert ROLL_PROTECTION_SECONDS < ROLL_TIMEOUT_SECONDS, "others must get a chance to rescue"
 
 EMBED_DESCRIPTION_LIMIT = 4096
