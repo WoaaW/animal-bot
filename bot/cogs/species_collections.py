@@ -26,16 +26,16 @@ class Collections(commands.Cog):
     @app_commands.describe(group="Voir les espèces d'un groupe")
     async def collections(self, ctx: commands.Context, *, group: str | None = None):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
         collection = None
         if group is not None:
             needle = _fold(group)
             collection = next((a for a in COLLECTIONS if _fold(a.label) == needle), None)
             if collection is None:
-                await ctx.send(f"Aucune collection ne s'appelle « {group} ».", ephemeral=True)
+                await ctx.send(f"Aucune collection ne s'appelle « {group} ».")
                 return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         async with SessionLocal() as session:
             species = await rescued_species(session, ctx.guild.id, ctx.author.id)
@@ -45,7 +45,7 @@ class Collections(commands.Cog):
                 members = [a for a in animals if collection.includes(a)]
 
         if collection is None:
-            await ctx.send(embed=self._overview(ctx.author, species), ephemeral=True)
+            await ctx.send(embed=self._overview(ctx.author, species))
             return
 
         # One group: every species in it, rarest first, ✓ for those rescued.
@@ -58,7 +58,7 @@ class Collections(commands.Cog):
         count = progress(species, collection)
         difficulty, bonus = DIFFICULTY[collection.difficulty]
         title = f"{collection.label} · {min(count, COLLECTION_TARGET)}/{COLLECTION_TARGET} · {difficulty}, +{bonus} %"
-        await send_pages(ctx, paginate(title, lines, discord.Color.gold()), ephemeral=True)
+        await send_pages(ctx, paginate(title, lines, discord.Color.gold()))
 
     @staticmethod
     def _overview(member: discord.abc.User, species: list[Animal]) -> discord.Embed:

@@ -469,7 +469,7 @@ class Rolls(commands.Cog):
     @commands.hybrid_command(name="rescue", aliases=["rc"], description="Tire un animal au hasard à sauver !")
     async def rescue(self, ctx: commands.Context):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
         await ctx.defer()
 
@@ -512,12 +512,11 @@ class Rolls(commands.Cog):
                 )
 
         if not animals:
-            await ctx.send("Il n'y a encore aucun animal ! Lance `python -m bot.seed`.", ephemeral=True)
+            await ctx.send("Il n'y a encore aucun animal ! Lance `python -m bot.seed`.")
             return
         if status is None:
             await ctx.send(
                 f"Tu n'as plus de rolls ! Ils reviennent dans {format_wait(seconds_until_reset())}.",
-                ephemeral=True,
             )
             return
 
@@ -579,7 +578,7 @@ class Rolls(commands.Cog):
     @app_commands.describe(member="Le joueur dont voir la réserve (toi par défaut)")
     async def reserve(self, ctx: commands.Context, member: discord.Member | None = None):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
         target = member or ctx.author
         await ctx.defer()
@@ -598,11 +597,10 @@ class Rolls(commands.Cog):
 
         if not rows:
             if target == ctx.author:
-                await ctx.send("Tu n'as encore sauvé aucun animal ! Essaie `/rescue`.", ephemeral=True)
+                await ctx.send("Tu n'as encore sauvé aucun animal ! Essaie `/rescue`.")
             else:
                 await ctx.send(
                     f"{target.mention} n'a encore sauvé aucun animal.",
-                    ephemeral=True,
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
             return
@@ -650,16 +648,16 @@ class Rolls(commands.Cog):
             rarity = ""  # can't happen with the choices, but don't trust it
         if rarity == "":
             labels = ", ".join(RARITY_LABEL.values())
-            await ctx.send(f"Rareté inconnue. Choisis parmi : {labels}.", ephemeral=True)
+            await ctx.send(f"Rareté inconnue. Choisis parmi : {labels}.")
             return
         collection = None
         if group:
             needle = _fold(group)
             collection = next((a for a in COLLECTIONS if _fold(a.label) == needle), None)
             if collection is None:
-                await ctx.send(f"Aucun groupe ne s'appelle « {group} ».", ephemeral=True)
+                await ctx.send(f"Aucun groupe ne s'appelle « {group} ».")
                 return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
         async with SessionLocal() as session:
             stmt = select(Animal)
             if rarity is not None:
@@ -702,7 +700,7 @@ class Rolls(commands.Cog):
             title += f" · {sum(a.id in owners for a in animals)} sauvés ici"
         color = RARITY_COLOR[rarity] if rarity else discord.Color.green()
         if not animals:
-            await send_pages(ctx, paginate(title, lines, color), ephemeral=True)
+            await send_pages(ctx, paginate(title, lines, color))
             return
 
         # One card per animal, in the list's order, for the "Fiches" button.
@@ -726,7 +724,7 @@ class Rolls(commands.Cog):
             cards.append(card)
         list_pages = paginate(title, lines, color)
         view = AnimalsView(list_pages, cards, ctx.author.id)
-        view.message = await ctx.send(embed=list_pages[0], view=view, ephemeral=True)
+        view.message = await ctx.send(embed=list_pages[0], view=view)
 
     @animals.autocomplete("group")
     async def animals_group_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -750,7 +748,7 @@ class Rolls(commands.Cog):
         found = next((a for a in animals if _fold(a.name) == needle), None)
 
         if found is None:
-            await ctx.send(f"Aucun animal ne s'appelle « {animal} ».", ephemeral=True)
+            await ctx.send(f"Aucun animal ne s'appelle « {animal} ».")
             return
         embed = animal_embed(found, full=True)
         add_collections_field(embed, found, species)

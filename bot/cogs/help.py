@@ -35,7 +35,7 @@ class Help(commands.Cog):
             description="\n".join(lines),
             color=discord.Color.green(),
         )
-        await ctx.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):

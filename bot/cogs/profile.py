@@ -76,7 +76,7 @@ class Profile(commands.Cog):
     @app_commands.guild_only()
     async def profile(self, ctx: commands.Context, member: discord.Member | None = None):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
         await ctx.defer()
         target = member or ctx.author

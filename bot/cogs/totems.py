@@ -78,7 +78,7 @@ class Totems(commands.Cog):
     )
     async def totem(self, ctx: commands.Context):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
         await ctx.defer()
 
@@ -110,13 +110,13 @@ class Totems(commands.Cog):
     @app_commands.describe(animal="L'animal qui devient totem")
     async def totem_add(self, ctx: commands.Context, *, animal: str):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         row = _pick(await _rescues(ctx.guild.id, ctx.author.id), animal, in_reserve=False)
         if row is None:
-            await ctx.send(f"Tu n'as aucun « {animal} » qui ne soit pas déjà un totem.", ephemeral=True)
+            await ctx.send(f"Tu n'as aucun « {animal} » qui ne soit pas déjà un totem.")
             return
         async with SessionLocal() as session:
             placed = await place_in_reserve(session, ctx.guild.id, ctx.author.id, row[0].id)
@@ -127,26 +127,24 @@ class Totems(commands.Cog):
             await ctx.send(
                 f"Tu as déjà {status.max_slots} totems, le maximum ! "
                 "Retires-en un avec `/totem remove`, ou achète une place de totem dans le `/shop`.",
-                ephemeral=True,
             )
             return
         await ctx.send(
             f"Nouveau totem : **{_label(row)}**. Tes totems rapportent {format_rate(status.rate)} {CURRENCY_NAME}/h "
             f"({status.used}/{status.max_slots}).",
-            ephemeral=True,
         )
 
     @totem.command(name="remove", description="Retire un de tes totems.")
     @app_commands.describe(animal="Le totem à retirer")
     async def totem_remove(self, ctx: commands.Context, *, animal: str):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         row = _pick(await _rescues(ctx.guild.id, ctx.author.id), animal, in_reserve=True)
         if row is None:
-            await ctx.send(f"Aucun de tes totems ne s'appelle « {animal} ».", ephemeral=True)
+            await ctx.send(f"Aucun de tes totems ne s'appelle « {animal} ».")
             return
         async with SessionLocal() as session:
             removed = await remove_from_reserve(session, ctx.guild.id, ctx.author.id, row[0].id)
@@ -154,12 +152,11 @@ class Totems(commands.Cog):
             status = await get_reserve_status(session, ctx.guild.id, ctx.author.id)
 
         if not removed:
-            await ctx.send(f"Aucun de tes totems ne s'appelle « {animal} ».", ephemeral=True)
+            await ctx.send(f"Aucun de tes totems ne s'appelle « {animal} ».")
             return
         await ctx.send(
             f"**{row[1].name}** n'est plus un totem. Tes totems rapportent {format_rate(status.rate)} {CURRENCY_NAME}/h "
             f"({status.used}/{status.max_slots}).",
-            ephemeral=True,
         )
 
     @totem_add.autocomplete("animal")

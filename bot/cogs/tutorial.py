@@ -137,7 +137,7 @@ class Tutorial(commands.Cog):
 
     @commands.hybrid_command(name="tutorial", aliases=["tu"], description="Explique comment jouer, étape par étape.")
     async def tutorial(self, ctx: commands.Context):
-        await send_pages(ctx, _pages(), ephemeral=True)
+        await send_pages(ctx, _pages())
 
     # Hybrid aliases only apply to the prefix side, so /tu is its own command.
     @app_commands.command(name="tu", description="Raccourci pour /tutorial.")

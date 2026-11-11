@@ -231,9 +231,9 @@ class Economy(commands.Cog):
     @commands.hybrid_command(name="balance", description=f"Affiche tes {CURRENCY_WORD}, tes rolls et tes claims.")
     async def balance(self, ctx: commands.Context):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         async with SessionLocal() as session:
             status = await get_status(session, ctx.guild.id, ctx.author.id)
@@ -256,15 +256,14 @@ class Economy(commands.Cog):
             f"**{reserve.pending}** à récolter (avec `/totem` ou `/shop`).\n"
             f"Niveau de chance : **{status.luck_level}** · niveau d'aura : **{status.appeal_level}**\n"
             f"Échanges restants aujourd'hui : **{status.trades_left}**",
-            ephemeral=True,
         )
 
     @commands.hybrid_command(name="shop", description=f"Dépense tes {CURRENCY_WORD} en améliorations.")
     async def shop(self, ctx: commands.Context):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         # Opening the shop collects the totems, so their berries can be spent.
         async with SessionLocal() as session:
@@ -274,7 +273,7 @@ class Economy(commands.Cog):
 
         view = ShopView(ctx.author.id, ctx.guild.id, status)
         content = f"Tu as récolté **{paid}** {CURRENCY_NAME} grâce à tes totems !" if paid else None
-        view.message = await ctx.send(content, embed=shop_embed(status), view=view, ephemeral=True)
+        view.message = await ctx.send(content, embed=shop_embed(status), view=view)
 
 
 async def setup(bot: commands.Bot):

@@ -21,10 +21,10 @@ async def on_command_error(ctx: commands.Context, error: commands.CommandError):
     if isinstance(error, commands.CommandNotFound):
         return
     if isinstance(error, commands.NotOwner):
-        await ctx.send("Cette commande est réservée au propriétaire du bot.", ephemeral=True)
+        await ctx.send("Cette commande est réservée au propriétaire du bot.")
         return
     if isinstance(error, (commands.BadArgument, commands.BadLiteralArgument)):
-        await ctx.send(f"Argument invalide : {error}", ephemeral=True)
+        await ctx.send(f"Argument invalide : {error}")
         return
     if isinstance(error, commands.MissingRequiredArgument):
         await ctx.send(f"Argument manquant : `{error.param.name}`. Voir `{PREFIX}help`.")

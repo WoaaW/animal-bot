@@ -48,9 +48,9 @@ class Wishes(commands.Cog):
     )
     async def wish(self, ctx: commands.Context):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         animals = await _wishlist(ctx.guild.id, ctx.author.id)
         async with SessionLocal() as session:
@@ -71,20 +71,20 @@ class Wishes(commands.Cog):
         if not lines:
             lines = ["Vide ! Ajoute un animal avec `/wish add`."]
         title = f"Wishlist de {ctx.author.display_name} ({len(animals)}/{MAX_WISHES})"
-        await send_pages(ctx, paginate(title, lines, discord.Color.gold()), ephemeral=True)
+        await send_pages(ctx, paginate(title, lines, discord.Color.gold()))
 
     @wish.command(name="add", description="Ajoute un animal à ta wishlist.")
     @app_commands.describe(animal="L'animal à souhaiter")
     async def wish_add(self, ctx: commands.Context, *, animal: str):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         async with SessionLocal() as session:
             found = _find(list((await session.execute(select(Animal))).scalars()), animal)
             if found is None:
-                await ctx.send(f"Aucun animal ne s'appelle « {animal} ».", ephemeral=True)
+                await ctx.send(f"Aucun animal ne s'appelle « {animal} ».")
                 return
             # Count then insert: two simultaneous adds could overshoot the cap
             # by one, which is harmless (nothing is spent).
@@ -94,7 +94,6 @@ class Wishes(commands.Cog):
             if count >= MAX_WISHES:
                 await ctx.send(
                     f"Ta wishlist est pleine ({MAX_WISHES} animaux max) ! Retires-en un avec `/wish remove`.",
-                    ephemeral=True,
                 )
                 return
             result = await session.execute(
@@ -105,25 +104,24 @@ class Wishes(commands.Cog):
             await session.commit()
 
         if result.rowcount == 0:
-            await ctx.send(f"**{found.name}** est déjà dans ta wishlist.", ephemeral=True)
+            await ctx.send(f"**{found.name}** est déjà dans ta wishlist.")
             return
         await ctx.send(
             f"Ajouté à ta wishlist : **{found.name}** ({count + 1}/{MAX_WISHES}). "
             "Tu seras mentionné quand quelqu'un d'autre le roll.",
-            ephemeral=True,
         )
 
     @wish.command(name="remove", description="Retire un animal de ta wishlist.")
     @app_commands.describe(animal="L'animal à retirer")
     async def wish_remove(self, ctx: commands.Context, *, animal: str):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         found = _find(await _wishlist(ctx.guild.id, ctx.author.id), animal)
         if found is None:
-            await ctx.send(f"Il n'y a aucun « {animal} » dans ta wishlist.", ephemeral=True)
+            await ctx.send(f"Il n'y a aucun « {animal} » dans ta wishlist.")
             return
         async with SessionLocal() as session:
             await session.execute(
@@ -132,7 +130,7 @@ class Wishes(commands.Cog):
                 )
             )
             await session.commit()
-        await ctx.send(f"Retiré de ta wishlist : **{found.name}**.", ephemeral=True)
+        await ctx.send(f"Retiré de ta wishlist : **{found.name}**.")
 
     @wish_add.autocomplete("animal")
     async def wish_add_autocomplete(self, interaction: discord.Interaction, current: str):

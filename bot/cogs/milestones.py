@@ -31,23 +31,23 @@ class Milestones(commands.Cog):
     @app_commands.describe(group="Voir les espèces d'un groupe")
     async def milestones(self, ctx: commands.Context, *, group: str | None = None):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
         milestone = None
         if group is not None:
             needle = _fold(group)
             milestone = next((m for m in MILESTONES if _fold(m.label) == needle), None)
             if milestone is None:
-                await ctx.send(f"Aucun milestone ne s'appelle « {group} ».", ephemeral=True)
+                await ctx.send(f"Aucun milestone ne s'appelle « {group} ».")
                 return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         async with SessionLocal() as session:
             species = await rescued_species(session, ctx.guild.id, ctx.author.id)
             animals = (await session.execute(select(Animal))).scalars().all()
 
         if milestone is None:
-            await ctx.send(embed=self._overview(ctx.author, species, animals), ephemeral=True)
+            await ctx.send(embed=self._overview(ctx.author, species, animals))
             return
 
         # One group: every species in it, rarest first, ✓ for those rescued.
@@ -59,7 +59,7 @@ class Milestones(commands.Cog):
             for a in members
         ]
         title = f"{milestone.badge} {milestone.label} · {progress(species, milestone)}/{len(members)}"
-        await send_pages(ctx, paginate(title, lines, discord.Color.gold()), ephemeral=True)
+        await send_pages(ctx, paginate(title, lines, discord.Color.gold()))
 
     @staticmethod
     def _overview(member: discord.abc.User, species: list[Animal], animals: list[Animal]) -> discord.Embed:

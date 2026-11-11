@@ -151,15 +151,14 @@ class Trades(commands.Cog):
     @app_commands.guild_only()
     async def trade(self, ctx: commands.Context, member: discord.Member, *, offer: TradeOffer):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
         if member.bot or member.id == ctx.author.id:
-            await ctx.send("Choisis un autre joueur.", ephemeral=True)
+            await ctx.send("Choisis un autre joueur.")
             return
         if not (offer.give_animal or offer.want_animal):
             await ctx.send(
                 "Indique ce que tu donnes ou demandes : `give_animal`, `want_animal`.",
-                ephemeral=True,
             )
             return
         await ctx.defer()

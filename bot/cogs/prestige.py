@@ -82,9 +82,9 @@ class Prestige(commands.Cog):
     )
     async def prestige(self, ctx: commands.Context):
         if ctx.guild is None:
-            await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
+            await ctx.send("Utilise cette commande dans un serveur.")
             return
-        await ctx.defer(ephemeral=True)
+        await ctx.defer()
 
         async with SessionLocal() as session:
             status = await get_status(session, ctx.guild.id, ctx.author.id)
@@ -94,7 +94,7 @@ class Prestige(commands.Cog):
         level = status.prestige_level
         milestone = required_milestone(level)
         if milestone is None:
-            await ctx.send(f"Tu as atteint le prestige maximum (**{len(MILESTONES)}**) !", ephemeral=True)
+            await ctx.send(f"Tu as atteint le prestige maximum (**{len(MILESTONES)}**) !")
             return
         total = sum(milestone.includes(a) for a in animals)
         ready = milestone in completed(species, animals)
@@ -107,7 +107,6 @@ class Prestige(commands.Cog):
         if not ready:
             await ctx.send(
                 text + f"Sauve toutes ses espèces pour pouvoir prestige (`/milestones {milestone.label}`).",
-                ephemeral=True,
             )
             return
         view = PrestigeView(ctx.guild.id, ctx.author.id, level)
@@ -116,7 +115,6 @@ class Prestige(commands.Cog):
             "tes améliorations et **tous tes animaux qui ne sont pas des totems**. Tes totems et leurs places sont conservés. "
             "Cette action est définitive.",
             view=view,
-            ephemeral=True,
         )
 
 
