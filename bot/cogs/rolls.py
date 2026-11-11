@@ -581,7 +581,7 @@ class Rolls(commands.Cog):
         if status.bonus_claims:
             counters += f" (+{status.bonus_claims} bonus)"
         # Players who wished for this animal (/wish add), or for a collection
-        # it's missing from (/wish addcollection), get pinged, except the
+        # it's missing from (/wish add Collection : …), get pinged, except the
         # roller, who's already looking at it. A player on both lists is
         # pinged once, on the animal line.
         others = [u for u in wishers if u != ctx.author.id]

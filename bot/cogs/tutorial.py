@@ -18,7 +18,7 @@ from ..economy import (
 from ..milestones import MILESTONES
 from ..species_collections import COLLECTION_TARGET, DIFFICULTY
 from .rolls import RARITY_LABEL, ROLL_PROTECTION_SECONDS, ROLL_TIMEOUT_SECONDS, format_wait, send_pages
-from .wishes import MAX_COLLECTION_WISHES, MAX_WISHES
+from .wishes import MAX_WISHES
 
 
 def _every(seconds: int) -> str:
@@ -110,8 +110,8 @@ def _pages() -> list[discord.Embed]:
             f"· `/wish add <animal>` : ajoute jusqu'à {MAX_WISHES} animaux à ta wishlist. "
             "Tu es mentionné quand quelqu'un d'autre les tire, pour tenter de les sauver après "
             f"les {format_wait(ROLL_PROTECTION_SECONDS)} de protection.\n"
-            f"· `/wish addcollection <collection>` : souhaite jusqu'à {MAX_COLLECTION_WISHES} collections. "
-            "Tu es mentionné quand quelqu'un d'autre tire une de leurs espèces que tu n'as pas encore.\n"
+            "· `/wish add Collection : <collection>` : souhaite une collection (une seule à la fois). "
+            "Tu es mentionné quand quelqu'un d'autre tire une de ses espèces que tu n'as pas encore.\n"
             "· `/trade <membre>` : propose un échange d'animaux, ou fais un cadeau. "
             f"{MAX_TRADES_PER_DAY} échanges par jour. Un totem doit être retiré avant d'être échangé.\n"
             "· `/profile` : ton profil, tes badges, tes totems et ton score.",
