@@ -5,11 +5,34 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert
 
 from ..db import SessionLocal
-from ..models import Animal, Rescue, Wish
+from ..models import Animal, CollectionWish, Rescue, Wish
+from ..species_collections import COLLECTION_TARGET, COLLECTIONS, Collection, progress, rescued_species
 from .rolls import RARITY_LABEL, RARITY_ORDER, _fold, paginate, send_pages
 
 # Wishlist size per player and guild. A long list would ping on most rolls.
 MAX_WISHES = 10
+# Wished collections, counted apart: one can cover dozens of species.
+MAX_COLLECTION_WISHES = 3
+
+
+async def _wished_collections(guild_id: int, user_id: int) -> list[Collection]:
+    async with SessionLocal() as session:
+        labels = set(
+            (
+                await session.execute(
+                    select(CollectionWish.collection).where(
+                        CollectionWish.guild_id == guild_id, CollectionWish.user_id == user_id
+                    )
+                )
+            ).scalars()
+        )
+    # COLLECTIONS order; a label no longer in COLLECTIONS is dropped.
+    return [c for c in COLLECTIONS if c.label in labels]
+
+
+def _find_collection(collections: list[Collection], query: str) -> Collection | None:
+    needle = _fold(query)
+    return next((c for c in collections if _fold(c.label) == needle), None)
 
 
 async def _wishlist(guild_id: int, user_id: int) -> list[Animal]:
@@ -71,7 +94,17 @@ class Wishes(commands.Cog):
         if not lines:
             lines = ["Vide ! Ajoute un animal avec `/wish add`."]
         title = f"Wishlist de {ctx.author.display_name} ({len(animals)}/{MAX_WISHES})"
-        await send_pages(ctx, paginate(title, lines, discord.Color.gold()))
+        content = None
+        collections = await _wished_collections(ctx.guild.id, ctx.author.id)
+        if collections:
+            async with SessionLocal() as session:
+                species = await rescued_species(session, ctx.guild.id, ctx.author.id)
+            shown = ", ".join(
+                f"**{c.label}** ({min(progress(species, c), COLLECTION_TARGET)}/{COLLECTION_TARGET})"
+                for c in collections
+            )
+            content = f"📚 Collections souhaitées ({len(collections)}/{MAX_COLLECTION_WISHES}) : {shown}"
+        await send_pages(ctx, paginate(title, lines, discord.Color.gold()), content=content)
 
     @wish.command(name="add", description="Ajoute un animal à ta wishlist.")
     @app_commands.describe(animal="L'animal à souhaiter")
@@ -131,6 +164,82 @@ class Wishes(commands.Cog):
             )
             await session.commit()
         await ctx.send(f"Retiré de ta wishlist : **{found.name}**.")
+
+    @wish.command(
+        name="addcollection",
+        description="Souhaite une collection : tu es mentionné quand on roll une de ses espèces qui te manque.",
+    )
+    @app_commands.describe(collection="La collection à souhaiter")
+    async def wish_add_collection(self, ctx: commands.Context, *, collection: str):
+        if ctx.guild is None:
+            await ctx.send("Utilise cette commande dans un serveur.")
+            return
+        found = _find_collection(COLLECTIONS, collection)
+        if found is None:
+            await ctx.send(f"Aucune collection ne s'appelle « {collection} ».")
+            return
+        await ctx.defer()
+
+        async with SessionLocal() as session:
+            # Count then insert, like /wish add: overshooting by one is harmless.
+            count = await session.scalar(
+                select(func.count()).where(
+                    CollectionWish.guild_id == ctx.guild.id, CollectionWish.user_id == ctx.author.id
+                )
+            )
+            if count >= MAX_COLLECTION_WISHES:
+                await ctx.send(
+                    f"Tu souhaites déjà {MAX_COLLECTION_WISHES} collections, le maximum ! "
+                    "Retires-en une avec `/wish removecollection`."
+                )
+                return
+            result = await session.execute(
+                insert(CollectionWish)
+                .values(guild_id=ctx.guild.id, user_id=ctx.author.id, collection=found.label)
+                .on_conflict_do_nothing()
+            )
+            await session.commit()
+
+        if result.rowcount == 0:
+            await ctx.send(f"Tu souhaites déjà la collection **{found.label}**.")
+            return
+        await ctx.send(
+            f"Collection souhaitée : **{found.label}** ({count + 1}/{MAX_COLLECTION_WISHES}). "
+            "Tu seras mentionné quand quelqu'un d'autre roll une de ses espèces que tu n'as pas encore.",
+        )
+
+    @wish.command(name="removecollection", description="Ne souhaite plus une collection.")
+    @app_commands.describe(collection="La collection à retirer")
+    async def wish_remove_collection(self, ctx: commands.Context, *, collection: str):
+        if ctx.guild is None:
+            await ctx.send("Utilise cette commande dans un serveur.")
+            return
+        await ctx.defer()
+
+        found = _find_collection(await _wished_collections(ctx.guild.id, ctx.author.id), collection)
+        if found is None:
+            await ctx.send(f"Tu ne souhaites aucune collection « {collection} ».")
+            return
+        async with SessionLocal() as session:
+            await session.execute(
+                delete(CollectionWish).where(
+                    CollectionWish.guild_id == ctx.guild.id,
+                    CollectionWish.user_id == ctx.author.id,
+                    CollectionWish.collection == found.label,
+                )
+            )
+            await session.commit()
+        await ctx.send(f"Collection retirée de ta wishlist : **{found.label}**.")
+
+    @wish_add_collection.autocomplete("collection")
+    async def wish_add_collection_autocomplete(self, interaction: discord.Interaction, current: str):
+        return _choices([c.label for c in COLLECTIONS], current)
+
+    @wish_remove_collection.autocomplete("collection")
+    async def wish_remove_collection_autocomplete(self, interaction: discord.Interaction, current: str):
+        if interaction.guild is None:
+            return []
+        return _choices([c.label for c in await _wished_collections(interaction.guild.id, interaction.user.id)], current)
 
     @wish_add.autocomplete("animal")
     async def wish_add_autocomplete(self, interaction: discord.Interaction, current: str):

@@ -29,7 +29,7 @@ from ..economy import (
     roll_appeal,
     seconds_until_reset,
 )
-from ..models import Animal, Rescue, Wish
+from ..models import Animal, CollectionWish, Rescue, Wish
 
 # Base weight of each tier, in % of the full table. A roll picks the tier
 # first, then an animal uniformly within it, so the odds don't depend on how
@@ -215,6 +215,34 @@ def add_collections_field(embed: discord.Embed, animal: Animal, species: list[An
         lines.append(f"{collection.label} · {min(count, COLLECTION_TARGET)}/{COLLECTION_TARGET}{done}")
     if lines:
         embed.add_field(name="Collections", value="\n".join(lines), inline=False)
+
+
+async def _collection_wishers(session, guild_id: int, animal: Animal) -> dict[int, list[str]]:
+    """Players who wished for a collection `animal` counts for and don't own
+    it yet, with those collections' labels (in COLLECTIONS order). Lives here
+    rather than in wishes.py, which imports from this module."""
+    labels = [c.label for c in COLLECTIONS if c.includes(animal)]
+    if not labels:
+        return {}
+    rows = (
+        await session.execute(
+            select(CollectionWish.user_id, CollectionWish.collection).where(
+                CollectionWish.guild_id == guild_id, CollectionWish.collection.in_(labels)
+            )
+        )
+    ).all()
+    owners = set(
+        (
+            await session.execute(
+                select(Rescue.user_id).where(Rescue.guild_id == guild_id, Rescue.animal_id == animal.id)
+            )
+        ).scalars()
+    )
+    wishers: dict[int, list[str]] = {}
+    for user_id, label in sorted(rows, key=lambda r: labels.index(r[1])):
+        if user_id not in owners:
+            wishers.setdefault(user_id, []).append(label)
+    return wishers
 
 
 class RescueView(discord.ui.View):
@@ -510,6 +538,7 @@ class Rolls(commands.Cog):
                         )
                     ).scalars()
                 )
+                collection_wishers = await _collection_wishers(session, ctx.guild.id, animal)
 
         if not animals:
             await ctx.send("Il n'y a encore aucun animal ! Lance `python -m bot.seed`.")
@@ -551,22 +580,33 @@ class Rolls(commands.Cog):
         counters += f" · {status.claims}/{status.max_claims} claims"
         if status.bonus_claims:
             counters += f" (+{status.bonus_claims} bonus)"
-        # Players who wished for this animal (/wish) get pinged, except the
-        # roller, who's already looking at it.
+        # Players who wished for this animal (/wish add), or for a collection
+        # it's missing from (/wish addcollection), get pinged, except the
+        # roller, who's already looking at it. A player on both lists is
+        # pinged once, on the animal line.
         others = [u for u in wishers if u != ctx.author.id]
-        content = counters
-        if ctx.author.id in wishers:
-            content = f"⭐ Dans ta wishlist !\n{content}"
+        collectors = [u for u in collection_wishers if u != ctx.author.id and u not in wishers]
+        lines = []
         if others:
-            content = (
-                f"⭐ Souhaité par {' '.join(f'<@{u}>' for u in others)}"
-                f" · sauvetage possible <t:{view.protected_until}:R>\n{content}"
+            lines.append(f"⭐ Souhaité par {' '.join(f'<@{u}>' for u in others)}")
+        if collectors:
+            lines.append(
+                "Manque à la collection de "
+                + ", ".join(f"<@{u}> ({', '.join(collection_wishers[u])})" for u in collectors)
             )
+        if lines:
+            lines[0] += f" · sauvetage possible <t:{view.protected_until}:R>"
+        if ctx.author.id in collection_wishers:
+            lines.insert(0, f"Nouveau pour ta collection {', '.join(collection_wishers[ctx.author.id])} !")
+        if ctx.author.id in wishers:
+            lines.insert(0, "⭐ Dans ta wishlist !")
+        content = "\n".join([*lines, counters])
+        pinged = [*others, *collectors]
         view.message = await ctx.send(
             content,
             embed=embed,
             view=view,
-            allowed_mentions=discord.AllowedMentions(users=[discord.Object(u) for u in others]),
+            allowed_mentions=discord.AllowedMentions(users=[discord.Object(u) for u in pinged]),
         )
 
     @app_commands.command(name="rc", description="Raccourci pour /rescue.")

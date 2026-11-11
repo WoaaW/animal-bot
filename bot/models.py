@@ -63,6 +63,21 @@ class Wish(Base):
     animal: Mapped[Animal] = relationship()
 
 
+class CollectionWish(Base):
+    """A collection a player wants to fill: they're pinged when someone else
+    rolls one of its species that they don't own yet."""
+
+    __tablename__ = "collection_wishes"
+    __table_args__ = (UniqueConstraint("guild_id", "user_id", "collection"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    # Collection.label: collections live in code, not in a table, so renaming
+    # one in COLLECTIONS orphans its wishes (they're then just ignored).
+    collection: Mapped[str] = mapped_column(String(100))
+
+
 class PlayerState(Base):
     """Per-player, per-guild state: currency, roll/claim counters, shop upgrades."""
 
