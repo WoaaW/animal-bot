@@ -634,6 +634,10 @@ class Rolls(commands.Cog):
             for tier, lines in sections.items()
         ]
         pages = paginate_sections(f"Réserve de {target.display_name} ({total})", headers, discord.Color.green())
+        for page in pages:
+            # display_avatar: the server avatar, else the account's, else
+            # Discord's default one, so it's never missing.
+            page.set_thumbnail(url=target.display_avatar.url)
         await send_pages(ctx, pages)
 
     @commands.hybrid_command(name="animals", description="Liste tous les animaux, des plus communs aux plus rares.")
