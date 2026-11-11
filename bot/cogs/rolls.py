@@ -740,6 +740,10 @@ class Rolls(commands.Cog):
         await ctx.defer()
         async with SessionLocal() as session:
             animals = (await session.execute(select(Animal))).scalars().all()
+            # The invoker's progress in each collection, like on a roll.
+            species = None
+            if ctx.guild is not None:
+                species = await rescued_species(session, ctx.guild.id, ctx.author.id)
         # Autocomplete sends the exact name, but "!info panda roux" is typed
         # by hand, so match case- and accent-insensitively.
         needle = _fold(animal)
@@ -748,7 +752,9 @@ class Rolls(commands.Cog):
         if found is None:
             await ctx.send(f"Aucun animal ne s'appelle « {animal} ».", ephemeral=True)
             return
-        await ctx.send(embed=animal_embed(found, full=True))
+        embed = animal_embed(found, full=True)
+        add_collections_field(embed, found, species)
+        await ctx.send(embed=embed)
 
     @info.autocomplete("animal")
     async def info_autocomplete(
