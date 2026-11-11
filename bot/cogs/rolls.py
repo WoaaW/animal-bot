@@ -575,11 +575,13 @@ class Rolls(commands.Cog):
         ctx = await commands.Context.from_interaction(interaction)
         await self.rescue.callback(self, ctx)
 
-    @commands.hybrid_command(name="reserve", description="Affiche ta réserve : les animaux que tu as sauvés.")
-    async def reserve(self, ctx: commands.Context):
+    @commands.hybrid_command(name="reserve", description="Affiche ta réserve (ou celle d'un joueur) : les animaux sauvés.")
+    @app_commands.describe(member="Le joueur dont voir la réserve (toi par défaut)")
+    async def reserve(self, ctx: commands.Context, member: discord.Member | None = None):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.", ephemeral=True)
             return
+        target = member or ctx.author
         await ctx.defer()
 
         async with SessionLocal() as session:
@@ -588,14 +590,21 @@ class Rolls(commands.Cog):
                 .join(Rescue, Rescue.animal_id == Animal.id)
                 .where(
                     Rescue.guild_id == ctx.guild.id,
-                    Rescue.user_id == ctx.author.id,
+                    Rescue.user_id == target.id,
                 )
                 .order_by(Rescue.rescued_at)
             )
             rows = (await session.execute(stmt)).all()
 
         if not rows:
-            await ctx.send("Tu n'as encore sauvé aucun animal ! Essaie `/rescue`.", ephemeral=True)
+            if target == ctx.author:
+                await ctx.send("Tu n'as encore sauvé aucun animal ! Essaie `/rescue`.", ephemeral=True)
+            else:
+                await ctx.send(
+                    f"{target.mention} n'a encore sauvé aucun animal.",
+                    ephemeral=True,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
             return
 
         # One section per rarity, rarest first; in each, one line per species,
@@ -626,7 +635,7 @@ class Rolls(commands.Cog):
             (f"__**{RARITY_LABEL[tier].capitalize()}**__ ({len(lines)})", lines)
             for tier, lines in sections.items()
         ]
-        pages = paginate_sections(f"Réserve de {ctx.author.display_name} ({total})", headers, discord.Color.green())
+        pages = paginate_sections(f"Réserve de {target.display_name} ({total})", headers, discord.Color.green())
         await send_pages(ctx, pages)
 
     @commands.hybrid_command(name="animals", description="Liste tous les animaux, des plus communs aux plus rares.")

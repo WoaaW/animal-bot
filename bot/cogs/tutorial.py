@@ -71,7 +71,7 @@ def _pages() -> list[discord.Embed]:
             f"Ensuite, n'importe qui peut le faire, jusqu'à {format_wait(ROLL_TIMEOUT_SECONDS)}.\n"
             "· Un même animal peut être sauvé plusieurs fois, par toi ou par d'autres : "
             "une deuxième copie avec une meilleure aura peut valoir le coup.\n\n"
-            "`/reserve` montre tous les animaux que tu as sauvés.",
+            "`/reserve` montre tous les animaux que tu as sauvés (`/reserve @membre` pour ceux d'un autre joueur).",
         ),
         (
             "4) Les totems",
