@@ -100,7 +100,7 @@ class Wishes(commands.Cog):
         title = f"Wishlist de {ctx.author.display_name} ({len(animals)}/{MAX_WISHES})"
         content = None
         if collection is not None:
-            count = min(progress(species, collection), COLLECTION_TARGET)
+            count = progress(species, collection)
             content = f"Collection souhaitée : **{collection.label}** ({count}/{COLLECTION_TARGET})"
         await send_pages(ctx, paginate(title, lines, discord.Color.gold()), content=content)
 

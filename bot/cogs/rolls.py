@@ -212,7 +212,7 @@ def add_collections_field(embed: discord.Embed, animal: Animal, species: list[An
             continue
         count = progress(species, collection)
         done = " ✓" if count >= COLLECTION_TARGET else ""
-        lines.append(f"{collection.label} · {min(count, COLLECTION_TARGET)}/{COLLECTION_TARGET}{done}")
+        lines.append(f"{collection.label} · {count}/{COLLECTION_TARGET}{done}")
     if lines:
         embed.add_field(name="Collections", value="\n".join(lines), inline=False)
 

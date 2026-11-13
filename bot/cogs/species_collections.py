@@ -10,8 +10,10 @@ from .rolls import _fold
 
 def _bar(count: int) -> str:
     # Same look as the shop's bars; in a code span so the stars stay stars.
+    # The bar stops at the target, but the count goes past it (7/5): extra
+    # species still matter, they keep the collection if one is traded away.
     done = min(count, COLLECTION_TARGET)
-    return f"`|{'*' * done}{'-' * (COLLECTION_TARGET - done)}|` {done}/{COLLECTION_TARGET}"
+    return f"`|{'*' * done}{'-' * (COLLECTION_TARGET - done)}|` {count}/{COLLECTION_TARGET}"
 
 
 class Collections(commands.Cog):
