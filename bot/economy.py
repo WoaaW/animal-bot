@@ -416,11 +416,17 @@ async def _reserve_state(session: AsyncSession, guild_id: int, user_id: int) -> 
     return base, bonus, used, milestone_pct, anchor, banked, elapsed, slots
 
 
+def reserve_rate(base: int, bonus: int, milestone_pct: int) -> float:
+    """Points per hour of a reserve: its base rate with the collection and
+    milestone bonuses (in %), as _reserve_segment applies them."""
+    return base * (100 + bonus) * (100 + milestone_pct) / 10000
+
+
 async def get_reserve_status(session: AsyncSession, guild_id: int, user_id: int) -> ReserveStatus:
     base, bonus, used, milestone_pct, anchor, banked, elapsed, slots = await _reserve_state(session, guild_id, user_id)
     earned, _ = _reserve_segment(base, bonus, milestone_pct, anchor, elapsed, int(time.time()))
     return ReserveStatus(
-        rate=base * (100 + bonus) * (100 + milestone_pct) / 10000,
+        rate=reserve_rate(base, bonus, milestone_pct),
         bonus=bonus,
         milestones=milestone_pct,
         pending=(banked + earned) // 3600,

@@ -114,7 +114,8 @@ def _pages() -> list[discord.Embed]:
             "Tu es mentionné quand quelqu'un d'autre tire une de ses espèces que tu n'as pas encore.\n"
             "· `/trade <membre>` : propose un échange d'animaux, ou fais un cadeau. "
             f"{MAX_TRADES_PER_DAY} échanges par jour. Un totem doit être retiré avant d'être échangé.\n"
-            "· `/profile` : ton profil, tes badges, tes totems et ton score.",
+            "· `/profile` : ton profil, tes badges, tes totems et ton score.\n"
+            "· `/top` : les classements du serveur (score, revenu des totems, collections).",
         ),
         (
             "8) Pour aller plus loin",
