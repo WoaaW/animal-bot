@@ -691,13 +691,29 @@ class Rolls(commands.Cog):
         await send_pages(ctx, pages)
 
     @commands.hybrid_command(name="animals", description="Liste tous les animaux, des plus communs aux plus rares.")
-    @app_commands.describe(rarity="N'afficher qu'une rareté", group="N'afficher qu'une collection")
+    @app_commands.describe(
+        rarity="N'afficher qu'une rareté",
+        member="N'afficher que les animaux sauvés par ce joueur",
+        group="N'afficher qu'une collection",
+    )
     @app_commands.choices(rarity=[app_commands.Choice(name=RARITY_LABEL[t].capitalize(), value=t) for t in RARITY_ODDS])
-    async def animals(self, ctx: commands.Context, rarity: str | None = None, *, group: str | None = None):
+    async def animals(
+        self,
+        ctx: commands.Context,
+        rarity: str | None = None,
+        member: discord.Member | None = None,
+        *,
+        group: str | None = None,
+    ):
         if ctx.interaction is None:
-            # Typed by hand ("!animals peu commun félidés"): the words don't
-            # split cleanly into the two parameters, so parse the whole text.
-            rarity, group = _parse_animals_filter(" ".join(filter(None, [rarity, group])))
+            # Typed by hand ("!animals @Bob peu commun félidés"): the words
+            # don't split cleanly into the parameters, so parse the whole text,
+            # mentions apart (the converter misses one typed before a rarity).
+            text = " ".join(filter(None, [rarity, group]))
+            if member is None and ctx.message.mentions:
+                member = ctx.message.mentions[0]
+            text = re.sub(r"<@!?\d+>", "", text).strip()
+            rarity, group = _parse_animals_filter(text)
         elif rarity is not None and rarity not in RARITY_ODDS:
             rarity = ""  # can't happen with the choices, but don't trust it
         if rarity == "":
@@ -711,13 +727,23 @@ class Rolls(commands.Cog):
             if collection is None:
                 await ctx.send(f"Aucun groupe ne s'appelle « {group} ».")
                 return
-        await self.send_animal_list(ctx, rarity, collection)
+        if member is not None and ctx.guild is None:
+            await ctx.send("Le filtre par joueur ne marche que dans un serveur.")
+            return
+        await self.send_animal_list(ctx, rarity, collection, member=member)
 
     async def send_animal_list(
-        self, ctx: commands.Context, rarity: str | None, collection: Collection | None, *, content: str | None = None
+        self,
+        ctx: commands.Context,
+        rarity: str | None,
+        collection: Collection | None,
+        *,
+        member: discord.abc.User | None = None,
+        content: str | None = None,
     ) -> None:
-        """The /animals list (and its cards), filtered by rarity and/or
-        collection. Shared with /collections <groupe>; `content` goes above."""
+        """The /animals list (and its cards), filtered by rarity, collection
+        and/or the player who rescued them. Shared with /collections <groupe>;
+        `content` goes above."""
         # The caller may have deferred already, and deferring twice raises.
         if ctx.interaction is None or not ctx.interaction.response.is_done():
             await ctx.defer()
@@ -740,6 +766,8 @@ class Rolls(commands.Cog):
                 )
                 for animal_id, user_id in rescues.all():
                     owners.setdefault(animal_id, []).append(user_id)
+        if member is not None:
+            animals = [a for a in animals if member.id in owners.get(a.id, [])]
 
         # Most common first, names A→Z within a rarity.
         animals.sort(key=lambda a: (-RARITY_ORDER[a.rarity], _fold(a.name)))
@@ -759,7 +787,9 @@ class Rolls(commands.Cog):
         if rarity is not None:
             title += f" {RARITY_LABEL[rarity]}s" if collection is None else f" · {RARITY_LABEL[rarity]}s"
         title += f" ({len(animals)})"
-        if ctx.guild is not None:
+        if member is not None:
+            title += f" · sauvés par {member.display_name}"
+        elif ctx.guild is not None:
             title += f" · {sum(a.id in owners for a in animals)} sauvés ici"
         color = RARITY_COLOR[rarity] if rarity else discord.Color.green()
         if not animals:

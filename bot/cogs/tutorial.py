@@ -119,7 +119,7 @@ def _pages() -> list[discord.Embed]:
         ),
         (
             "8) Pour aller plus loin",
-            "· `/animals` : tous les animaux du jeu, filtrables par rareté ou collection. "
+            "· `/animals` : tous les animaux du jeu, filtrables par rareté, collection ou joueur qui les a sauvés. "
             "Le bouton **Fiches** les montre un par un, avec photo.\n"
             "· `/info <animal>` : la fiche complète d'un animal.\n"
             "· `/help` : la liste de toutes les commandes.\n\n"
