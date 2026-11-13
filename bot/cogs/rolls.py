@@ -736,14 +736,15 @@ class Rolls(commands.Cog):
         self,
         ctx: commands.Context,
         rarity: str | None,
-        collection: Collection | None,
+        collection: Collection | milestones.Milestone | None,
         *,
         member: discord.abc.User | None = None,
         content: str | None = None,
     ) -> None:
         """The /animals list (and its cards), filtered by rarity, collection
-        and/or the player who rescued them. Shared with /collections <groupe>;
-        `content` goes above."""
+        (or milestone group: both have a label and `includes`) and/or the
+        player who rescued them. Shared with /collections <groupe> and
+        /milestones <groupe>; `content` goes above."""
         # The caller may have deferred already, and deferring twice raises.
         if ctx.interaction is None or not ctx.interaction.response.is_done():
             await ctx.defer()

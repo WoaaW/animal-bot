@@ -8,7 +8,7 @@ from ..economy import CURRENCY_NAME, MILESTONE_POINTS_BONUS
 from ..milestones import MILESTONES, progress
 from ..models import Animal
 from ..species_collections import rescued_species
-from .rolls import RARITY_LABEL, RARITY_ORDER, _fold, paginate, send_pages
+from .rolls import _fold
 
 BAR_WIDTH = 20
 
@@ -50,16 +50,11 @@ class Milestones(commands.Cog):
             await ctx.send(embed=self._overview(ctx.author, species, animals))
             return
 
-        # One group: every species in it, rarest first, ✓ for those rescued.
-        owned = {a.id for a in species}
-        members = [a for a in animals if milestone.includes(a)]
-        members.sort(key=lambda a: (RARITY_ORDER[a.rarity], _fold(a.name)))
-        lines = [
-            f"{'✓' if a.id in owned else '·'} **{a.name}** ({RARITY_LABEL[a.rarity]})"
-            for a in members
-        ]
-        title = f"{milestone.badge} {milestone.label} · {progress(species, milestone)}/{len(members)}"
-        await send_pages(ctx, paginate(title, lines, discord.Color.gold()))
+        # Same list and cards as /animals and /collections <groupe>, with the
+        # player's progress above.
+        total = sum(milestone.includes(a) for a in animals)
+        content = f"{milestone.badge} **{milestone.label}** {_bar(progress(species, milestone), total)}"
+        await self.bot.get_cog("Rolls").send_animal_list(ctx, None, milestone, content=content)
 
     @staticmethod
     def _overview(member: discord.abc.User, species: list[Animal], animals: list[Animal]) -> discord.Embed:
