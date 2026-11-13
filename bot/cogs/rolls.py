@@ -487,6 +487,45 @@ def _parse_animals_filter(text: str) -> tuple[str | None, str | None]:
     return None, text or None
 
 
+def reserve_pages(rows: list[tuple[Animal, Rescue]], member: discord.abc.User) -> list[discord.Embed]:
+    """/reserve's pages for `member`'s rescues (sorted by rescue date).
+    Shared with /profile's "Réserve" tab."""
+    # One section per rarity, rarest first; in each, one line per species,
+    # best appeal first (then by first rescue: rows come sorted by date
+    # and the sorts are stable). Each line has its first rescue date, each
+    # copy's appeal (best first), and 🔺 (the shop's totem icon) before
+    # the name if a copy is a totem.
+    copies: dict[int, tuple[Animal, list[Rescue]]] = {}
+    for a, rescue in rows:
+        copies.setdefault(a.id, (a, []))[1].append(rescue)
+    sections: dict[str, list[str]] = {}
+    species = sorted(copies.values(), key=lambda c: -max(r.appeal for r in c[1]))
+    for a, rescues in sorted(species, key=lambda c: RARITY_ORDER[c[0].rarity]):
+        # Stored as naive UTC. A Discord timestamp shows in each viewer's
+        # own timezone and date format.
+        first = int(rescues[0].rescued_at.replace(tzinfo=timezone.utc).timestamp())
+        rescues.sort(key=lambda r: -r.appeal)
+        shown = " ".join(f"{r.appeal}★" for r in rescues[:MAX_COPIES_SHOWN])
+        if len(rescues) > MAX_COPIES_SHOWN:
+            shown += f" +{len(rescues) - MAX_COPIES_SHOWN}"
+        count = f" ×{len(rescues)}" if len(rescues) > 1 else ""
+        marker = "🔺 " if any(r.in_reserve for r in rescues) else ""
+        sections.setdefault(a.rarity, []).append(
+            f"{marker}**{a.name}**{count} — *{a.scientific_name}* · {shown} · <t:{first}:d>"
+        )
+    total = len(rows)
+    headers = [
+        (f"__**{RARITY_LABEL[tier].capitalize()}**__ ({len(lines)})", lines)
+        for tier, lines in sections.items()
+    ]
+    pages = paginate_sections(f"Réserve de {member.display_name} ({total})", headers, discord.Color.green())
+    for page in pages:
+        # display_avatar: the server avatar, else the account's, else
+        # Discord's default one, so it's never missing.
+        page.set_thumbnail(url=member.display_avatar.url)
+    return pages
+
+
 class Rolls(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -645,39 +684,7 @@ class Rolls(commands.Cog):
                 )
             return
 
-        # One section per rarity, rarest first; in each, one line per species,
-        # best appeal first (then by first rescue: rows come sorted by date
-        # and the sorts are stable). Each line has its first rescue date, each
-        # copy's appeal (best first), and 🔺 (the shop's totem icon) before
-        # the name if a copy is a totem.
-        copies: dict[int, tuple[Animal, list[Rescue]]] = {}
-        for a, rescue in rows:
-            copies.setdefault(a.id, (a, []))[1].append(rescue)
-        sections: dict[str, list[str]] = {}
-        species = sorted(copies.values(), key=lambda c: -max(r.appeal for r in c[1]))
-        for a, rescues in sorted(species, key=lambda c: RARITY_ORDER[c[0].rarity]):
-            # Stored as naive UTC. A Discord timestamp shows in each viewer's
-            # own timezone and date format.
-            first = int(rescues[0].rescued_at.replace(tzinfo=timezone.utc).timestamp())
-            rescues.sort(key=lambda r: -r.appeal)
-            shown = " ".join(f"{r.appeal}★" for r in rescues[:MAX_COPIES_SHOWN])
-            if len(rescues) > MAX_COPIES_SHOWN:
-                shown += f" +{len(rescues) - MAX_COPIES_SHOWN}"
-            count = f" ×{len(rescues)}" if len(rescues) > 1 else ""
-            marker = "🔺 " if any(r.in_reserve for r in rescues) else ""
-            sections.setdefault(a.rarity, []).append(
-                f"{marker}**{a.name}**{count} — *{a.scientific_name}* · {shown} · <t:{first}:d>"
-            )
-        total = len(rows)
-        headers = [
-            (f"__**{RARITY_LABEL[tier].capitalize()}**__ ({len(lines)})", lines)
-            for tier, lines in sections.items()
-        ]
-        pages = paginate_sections(f"Réserve de {target.display_name} ({total})", headers, discord.Color.green())
-        for page in pages:
-            # display_avatar: the server avatar, else the account's, else
-            # Discord's default one, so it's never missing.
-            page.set_thumbnail(url=target.display_avatar.url)
+        pages = reserve_pages(rows, target)
         await send_pages(ctx, pages)
 
     @commands.hybrid_command(name="animals", description="Liste tous les animaux, des plus communs aux plus rares.")

@@ -9,7 +9,8 @@ from ..milestones import MILESTONES
 from ..models import Animal, Rescue
 from ..species_collections import COLLECTIONS, completed, rescued_species
 from .totems import _income, _rescues
-from .rolls import animal_embed, animal_header, format_appeal, format_rate, format_reserve_bonus
+from .rolls import animal_embed, animal_header, format_appeal, format_rate, format_reserve_bonus, reserve_pages
+from .species_collections import Collections
 
 
 def _animal_page(row: tuple[Rescue, Animal], number: int, total: int) -> discord.Embed:
@@ -29,33 +30,63 @@ def _animal_page(row: tuple[Rescue, Animal], number: int, total: int) -> discord
 
 
 class ProfileView(discord.ui.View):
-    """Flips through the reserve's animals under the fixed summary."""
+    """Under the fixed summary, one tab per part of the profile (totems,
+    reserve, collections), each with its own pages and ◀️▶️ when it has
+    several. Only the invoker clicks, since the message is public."""
 
-    def __init__(self, summary: discord.Embed, pages: list[discord.Embed], owner_id: int):
+    def __init__(self, summary: discord.Embed, tabs: dict[str, list[discord.Embed]], owner_id: int):
         super().__init__(timeout=180)
         self.summary = summary
-        self.pages = pages
+        self.tabs = tabs
         self.owner_id = owner_id
+        self.tab = next(iter(tabs))
         self.index = 0
         self.message: discord.Message | None = None
+        self._render()
+
+    @property
+    def embeds(self) -> list[discord.Embed]:
+        return [self.summary, self.tabs[self.tab][self.index]]
+
+    def _render(self) -> None:
+        """Rebuild the buttons: the tabs, then the arrows if this tab needs them."""
+        self.clear_items()
+        for name in self.tabs:
+            button = discord.ui.Button(
+                label=name,
+                style=discord.ButtonStyle.primary if name == self.tab else discord.ButtonStyle.secondary,
+                disabled=name == self.tab,
+                row=0,
+            )
+            button.callback = self._open(name)
+            self.add_item(button)
+        if len(self.tabs[self.tab]) > 1:
+            for emoji, step in (("◀️", -1), ("▶️", 1)):
+                button = discord.ui.Button(emoji=emoji, style=discord.ButtonStyle.secondary, row=1)
+                button.callback = self._flip(step)
+                self.add_item(button)
+
+    def _open(self, name: str):
+        async def callback(interaction: discord.Interaction) -> None:
+            self.tab, self.index = name, 0
+            self._render()
+            await interaction.response.edit_message(embeds=self.embeds, view=self)
+
+        return callback
+
+    def _flip(self, step: int):
+        async def callback(interaction: discord.Interaction) -> None:
+            # Wraps around, like before.
+            self.index = (self.index + step) % len(self.tabs[self.tab])
+            await interaction.response.edit_message(embeds=self.embeds, view=self)
+
+        return callback
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
             await interaction.response.send_message("Lance la commande toi-même pour feuilleter !", ephemeral=True)
             return False
         return True
-
-    async def _show(self, interaction: discord.Interaction, index: int) -> None:
-        self.index = index % len(self.pages)
-        await interaction.response.edit_message(embeds=[self.summary, self.pages[self.index]], view=self)
-
-    @discord.ui.button(emoji="◀️", style=discord.ButtonStyle.primary)
-    async def previous(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._show(interaction, self.index - 1)
-
-    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.primary)
-    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._show(interaction, self.index + 1)
 
     async def on_timeout(self) -> None:
         for item in self.children:
@@ -67,11 +98,15 @@ class ProfileView(discord.ui.View):
                 pass
 
 
+def _empty(text: str) -> discord.Embed:
+    return discord.Embed(description=text, color=discord.Color.gold())
+
+
 class Profile(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="profile", description="Affiche le profil d'un joueur : badges de milestones et totems.")
+    @commands.hybrid_command(name="profile", description="Affiche le profil d'un joueur : badges, totems, réserve et collections.")
     @app_commands.describe(member="Le joueur à afficher (toi par défaut)")
     @app_commands.guild_only()
     async def profile(self, ctx: commands.Context, member: discord.Member | None = None):
@@ -106,15 +141,18 @@ class Profile(commands.Cog):
         )
         summary.set_thumbnail(url=target.display_avatar.url)
 
-        if not rows:
-            await ctx.send(embed=summary)
-            return
-        pages = [_animal_page(row, number, len(rows)) for number, row in enumerate(rows, 1)]
-        if len(pages) == 1:
-            await ctx.send(embeds=[summary, pages[0]])
-            return
-        view = ProfileView(summary, pages, ctx.author.id)
-        view.message = await ctx.send(embeds=[summary, pages[0]], view=view)
+        totems = [_animal_page(row, number, len(rows)) for number, row in enumerate(rows, 1)]
+        animals = reserve_pages([(animal, rescue) for rescue, animal in owned], target)
+        for page in animals:
+            # The summary above already shows the avatar.
+            page.set_thumbnail(url=None)
+        tabs = {
+            "Totems": totems or [_empty("Aucun totem pour l'instant.")],
+            "Réserve": animals if owned else [_empty("Aucun animal sauvé pour l'instant.")],
+            "Collections": [Collections._overview(target, species)],
+        }
+        view = ProfileView(summary, tabs, ctx.author.id)
+        view.message = await ctx.send(embeds=view.embeds, view=view)
 
 
 async def setup(bot: commands.Bot):
