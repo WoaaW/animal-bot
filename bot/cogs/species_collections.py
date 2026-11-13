@@ -1,12 +1,11 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from sqlalchemy import select
 
 from ..species_collections import COLLECTION_TARGET, COLLECTIONS, DIFFICULTY, progress, rescued_species, total_bonus
 from ..db import SessionLocal
 from ..models import Animal
-from .rolls import RARITY_LABEL, RARITY_ORDER, _fold, paginate, send_pages
+from .rolls import _fold
 
 
 def _bar(count: int) -> str:
@@ -36,29 +35,19 @@ class Collections(commands.Cog):
                 await ctx.send(f"Aucune collection ne s'appelle « {group} ».")
                 return
         await ctx.defer()
-
         async with SessionLocal() as session:
             species = await rescued_species(session, ctx.guild.id, ctx.author.id)
-            members = []
-            if collection is not None:
-                animals = (await session.execute(select(Animal))).scalars().all()
-                members = [a for a in animals if collection.includes(a)]
-
         if collection is None:
             await ctx.send(embed=self._overview(ctx.author, species))
             return
-
-        # One group: every species in it, rarest first, ✓ for those rescued.
-        owned = {a.id for a in species}
-        members.sort(key=lambda a: (RARITY_ORDER[a.rarity], _fold(a.name)))
-        lines = [
-            f"{'✓' if a.id in owned else '·'} **{a.name}** ({RARITY_LABEL[a.rarity]})"
-            for a in members
-        ]
-        count = progress(species, collection)
+        # Same list and cards as /animals <groupe>, with the player's progress
+        # and the collection's reward above.
         difficulty, bonus = DIFFICULTY[collection.difficulty]
-        title = f"{collection.label} · {min(count, COLLECTION_TARGET)}/{COLLECTION_TARGET} · {difficulty}, +{bonus} %"
-        await send_pages(ctx, paginate(title, lines, discord.Color.gold()))
+        content = (
+            f"**{collection.label}** {_bar(progress(species, collection))} · "
+            f"{difficulty}, +{bonus} % de revenu des totems"
+        )
+        await self.bot.get_cog("Rolls").send_animal_list(ctx, None, collection, content=content)
 
     @staticmethod
     def _overview(member: discord.abc.User, species: list[Animal]) -> discord.Embed:

@@ -10,7 +10,7 @@ from discord.ext import commands
 from sqlalchemy import select
 
 from .. import milestones
-from ..species_collections import COLLECTION_TARGET, COLLECTIONS, completed, progress, rescued_species
+from ..species_collections import COLLECTION_TARGET, COLLECTIONS, Collection, completed, progress, rescued_species
 from ..db import SessionLocal
 from ..economy import (
     APPEAL,
@@ -701,7 +701,16 @@ class Rolls(commands.Cog):
             if collection is None:
                 await ctx.send(f"Aucun groupe ne s'appelle « {group} ».")
                 return
-        await ctx.defer()
+        await self.send_animal_list(ctx, rarity, collection)
+
+    async def send_animal_list(
+        self, ctx: commands.Context, rarity: str | None, collection: Collection | None, *, content: str | None = None
+    ) -> None:
+        """The /animals list (and its cards), filtered by rarity and/or
+        collection. Shared with /collections <groupe>; `content` goes above."""
+        # The caller may have deferred already, and deferring twice raises.
+        if ctx.interaction is None or not ctx.interaction.response.is_done():
+            await ctx.defer()
         async with SessionLocal() as session:
             stmt = select(Animal)
             if rarity is not None:
@@ -744,7 +753,7 @@ class Rolls(commands.Cog):
             title += f" · {sum(a.id in owners for a in animals)} sauvés ici"
         color = RARITY_COLOR[rarity] if rarity else discord.Color.green()
         if not animals:
-            await send_pages(ctx, paginate(title, lines, color))
+            await send_pages(ctx, paginate(title, lines, color), content=content)
             return
 
         # One card per animal, in the list's order, for the "Fiches" button.
@@ -768,7 +777,7 @@ class Rolls(commands.Cog):
             cards.append(card)
         list_pages = paginate(title, lines, color)
         view = AnimalsView(list_pages, cards, ctx.author.id)
-        view.message = await ctx.send(embed=list_pages[0], view=view)
+        view.message = await ctx.send(content, embed=list_pages[0], view=view)
 
     @animals.autocomplete("group")
     async def animals_group_autocomplete(self, interaction: discord.Interaction, current: str):
