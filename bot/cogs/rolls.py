@@ -510,8 +510,11 @@ def reserve_pages(rows: list[tuple[Animal, Rescue]], member: discord.abc.User) -
             shown += f" +{len(rescues) - MAX_COPIES_SHOWN}"
         count = f" ×{len(rescues)}" if len(rescues) > 1 else ""
         marker = "🔺 " if any(r.in_reserve for r in rescues) else ""
+        # The collections it counts for, rather than the scientific name.
+        labels = [c.label for c in COLLECTIONS if c.includes(a)]
+        groups = f" — {', '.join(labels)}" if labels else ""
         sections.setdefault(a.rarity, []).append(
-            f"{marker}**{a.name}**{count} — *{a.scientific_name}* · {shown} · <t:{first}:d>"
+            f"{marker}**{a.name}**{count}{groups} · {shown} · <t:{first}:d>"
         )
     total = len(rows)
     headers = [
