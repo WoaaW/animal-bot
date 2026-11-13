@@ -50,6 +50,9 @@ PRESTIGE_POINTS_BONUS = 25
 # (midnight UTC), the same for everyone, like roll windows.
 MAX_TRADES_PER_DAY = 3
 TRADE_RESET_SECONDS = 24 * 3600
+# The special roll (a shop unlock) comes back once a day, on the same midnight
+# UTC as trades.
+SPECIAL_ROLL_RESET_SECONDS = TRADE_RESET_SECONDS
 
 # The reserve: rescued animals put on show earn points per hour while the
 # player is away: a base by rarity (keys must match RARITY_ODDS) times a
@@ -78,6 +81,7 @@ UPGRADES = {
     "reserve": (PlayerState.reserve_slots, 1500, 2, 5 - BASE_RESERVE_SLOTS),  # +1 animal, up to 5
     "claims": (PlayerState.claim_slots, 2000, 1.5, 6 - BASE_CLAIMS),  # +1 claim that can be stored, up to 6
     "appeal": (PlayerState.appeal_level, 4000, 1.2, None),           # see appeal_odds; uncapped, so a flat curve
+    "special": (PlayerState.special_roll, 10000, 1, 1),              # one-time unlock of /rescue <groupe>
 }
 
 
@@ -159,6 +163,8 @@ class PlayerStatus:
     next_claim_in: int
     trades_left: int
     prestige_level: int
+    special_roll: int  # 1 once unlocked
+    special_roll_ready: bool  # unlocked and not used today
 
 
 def _current_period() -> int:
@@ -181,6 +187,14 @@ def _current_trade_period() -> int:
 
 def seconds_until_trade_reset() -> int:
     return int(TRADE_RESET_SECONDS - time.time() % TRADE_RESET_SECONDS)
+
+
+def _current_special_period() -> int:
+    return int(time.time() // SPECIAL_ROLL_RESET_SECONDS)
+
+
+def seconds_until_special_reset() -> int:
+    return int(SPECIAL_ROLL_RESET_SECONDS - time.time() % SPECIAL_ROLL_RESET_SECONDS)
 
 
 def _status(state: PlayerState) -> PlayerStatus:
@@ -208,6 +222,8 @@ def _status(state: PlayerState) -> PlayerStatus:
         next_claim_in=next_claim_in,
         trades_left=MAX_TRADES_PER_DAY - (state.trades_used if state.trades_period == _current_trade_period() else 0),
         prestige_level=state.prestige_level,
+        special_roll=state.special_roll,
+        special_roll_ready=state.special_roll >= 1 and state.special_roll_period != _current_special_period(),
     )
 
 
@@ -272,6 +288,19 @@ async def consume_roll(session: AsyncSession, guild_id: int, user_id: int) -> Pl
         session, guild_id, user_id,
         PlayerState.bonus_rolls > 0,
         bonus_rolls=PlayerState.bonus_rolls - 1,
+    )
+
+
+async def consume_special_roll(session: AsyncSession, guild_id: int, user_id: int) -> PlayerStatus | None:
+    """Use today's special roll; None if it isn't unlocked or was already
+    used today. Doesn't commit."""
+    period = _current_special_period()
+    await _ensure_player(session, guild_id, user_id)
+    return await _update_player(
+        session, guild_id, user_id,
+        PlayerState.special_roll >= 1,
+        PlayerState.special_roll_period != period,
+        special_roll_period=period,
     )
 
 
@@ -346,6 +375,7 @@ async def get_status(session: AsyncSession, guild_id: int, user_id: int) -> Play
         guild_id=guild_id, user_id=user_id, points=0, peak_points=0, rolls_used=0, rolls_period=0,
         claims_anchor=0, bonus_rolls=0, bonus_claims=0, extra_rolls=0, luck_level=0, claim_slots=0,
         reserve_slots=0, appeal_level=0, trades_used=0, trades_period=0, prestige_level=0,
+        special_roll=0, special_roll_period=0,
     ))
 
 

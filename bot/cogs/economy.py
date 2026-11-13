@@ -15,6 +15,7 @@ from ..economy import (
     get_reserve_status,
     get_status,
     seconds_until_reset,
+    seconds_until_special_reset,
     upgrade_max_level,
     upgrade_maxed,
     upgrade_price,
@@ -51,6 +52,7 @@ def _level(status: PlayerStatus, upgrade: str) -> int:
         "claims": status.claim_slots,
         "reserve": status.reserve_slots,
         "appeal": status.appeal_level,
+        "special": status.special_roll,
     }[upgrade]
 
 
@@ -137,10 +139,29 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
         f"Tes chances : {_format_appeal_odds(appeal_odds(status.appeal_level))}\n"
         f"Au niveau suivant : {_format_appeal_odds(appeal_odds(status.appeal_level + 1))}",
     )
+    special_maxed = upgrade_maxed("special", status.special_roll)
+    fields["special"] = (
+        f"🟠 Roll spécial — {'débloqué' if special_maxed else _cost(status, 'special')}",
+        ("Débloqué : " if special_maxed else "Débloque ")
+        + "un roll par jour parmi les animaux du milestone de ton choix (`/rescue <groupe>`), "
+        "en plus de tes rolls habituels.",
+    )
     for upgrade in visible_upgrades(status):
         name, value = fields[upgrade]
-        embed.add_field(name=name, value=f"{_progress(status, upgrade)}\n{value}", inline=False)
+        # A one-time unlock has no levels to show a bar for.
+        if upgrade_max_level(upgrade) != 1:
+            value = f"{_progress(status, upgrade)}\n{value}"
+        embed.add_field(name=name, value=value, inline=False)
     return embed
+
+
+def _special_line(status: PlayerStatus) -> str:
+    """/balance's line on the special roll, once unlocked."""
+    if not status.special_roll:
+        return ""
+    if status.special_roll_ready:
+        return "\nRoll spécial : **disponible** (`/rescue <groupe>`)"
+    return f"\nRoll spécial : revient dans {format_wait(seconds_until_special_reset())}"
 
 
 class ShopView(discord.ui.View):
@@ -160,7 +181,9 @@ class ShopView(discord.ui.View):
             "claims": self.claims,
             "reserve": self.reserve,
             "appeal": self.appeal,
+            "special": self.special,
         }
+        # A sixth button: discord.py puts it on a second row by itself.
         self.clear_items()
         for upgrade in visible_upgrades(self.status):
             button = buttons[upgrade]
@@ -214,6 +237,10 @@ class ShopView(discord.ui.View):
     async def appeal(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._buy(interaction, "appeal")
 
+    @discord.ui.button(emoji="🟠", label="Roll spécial", style=discord.ButtonStyle.primary)
+    async def special(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._buy(interaction, "special")
+
     async def on_timeout(self) -> None:
         for item in self.children:
             item.disabled = True
@@ -255,7 +282,8 @@ class Economy(commands.Cog):
             + ", "
             f"**{reserve.pending}** à récolter (avec `/totem` ou `/shop`).\n"
             f"Niveau de chance : **{status.luck_level}** · niveau d'aura : **{status.appeal_level}**\n"
-            f"Échanges restants aujourd'hui : **{status.trades_left}**",
+            f"Échanges restants aujourd'hui : **{status.trades_left}**"
+            + _special_line(status),
         )
 
     @commands.hybrid_command(name="shop", description=f"Dépense tes {CURRENCY_WORD} en améliorations.")

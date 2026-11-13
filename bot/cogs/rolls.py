@@ -23,11 +23,13 @@ from ..economy import (
     bank_reserve,
     consume_claim,
     consume_roll,
+    consume_special_roll,
     get_status,
     milestone_points,
     reserve_income,
     roll_appeal,
     seconds_until_reset,
+    seconds_until_special_reset,
 )
 from ..models import Animal, CollectionWish, Rescue, Wish
 
@@ -536,8 +538,41 @@ class Rolls(commands.Cog):
     # Hybrid commands answer both /rescue and !rescue. With a prefix command,
     # ctx.defer() just shows "typing…" and ephemeral=True is ignored.
     # Hybrid aliases only cover the prefix side: /rc is registered below.
-    @commands.hybrid_command(name="rescue", aliases=["rc"], description="Tire un animal au hasard à sauver !")
-    async def rescue(self, ctx: commands.Context):
+    # The optional group makes it the daily special roll (a shop unlock),
+    # among that milestone's animals. Kept out of /help on purpose
+    # (hidden_params); /rc and !rc only do regular rolls.
+    @commands.hybrid_command(
+        name="rescue",
+        aliases=["rc"],
+        description="Tire un animal au hasard à sauver !",
+        extras={"hidden_params": ["group"]},
+    )
+    @app_commands.describe(group="Roll spécial : le milestone dans lequel tirer (à débloquer au /shop)")
+    async def rescue(self, ctx: commands.Context, *, group: str | None = None):
+        if group is None or ctx.invoked_with == "rc":
+            await self._roll(ctx)
+            return
+        needle = _fold(group)
+        special = next((m for m in milestones.MILESTONES if _fold(m.label) == needle), None)
+        if special is None:
+            labels = ", ".join(m.label for m in milestones.MILESTONES)
+            await ctx.send(f"Aucun milestone ne s'appelle « {group} ». Choisis parmi : {labels}.")
+            return
+        await self._roll(ctx, special)
+
+    @rescue.autocomplete("group")
+    async def rescue_group_autocomplete(self, interaction: discord.Interaction, current: str):
+        needle = _fold(current)
+        return [
+            app_commands.Choice(name=m.label, value=m.label)
+            for m in milestones.MILESTONES
+            if needle in _fold(m.label)
+        ][:25]
+
+    async def _roll(self, ctx: commands.Context, special: milestones.Milestone | None = None) -> None:
+        """A roll: a regular one (/rescue), or the daily special roll among
+        the animals of the `special` milestone (/rescue <groupe>). Both work the
+        same once the animal is picked: points, wishes, rescue button."""
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.")
             return
@@ -546,12 +581,18 @@ class Rolls(commands.Cog):
         async with SessionLocal() as session:
             # Rescued animals stay rollable, and rescuable again.
             animals = list((await session.execute(select(Animal))).scalars().all())
+            pool = [a for a in animals if special.includes(a)] if special else animals
             # The roll doesn't change them; read before so the bonus is known.
             species = await rescued_species(session, ctx.guild.id, ctx.author.id)
-            # An empty table (seed never run) mustn't cost a roll.
-            status = await consume_roll(session, ctx.guild.id, ctx.author.id) if animals else None
+            # An empty pool (seed never run) mustn't cost a roll.
+            status = None
+            if pool:
+                consume = consume_special_roll if special else consume_roll
+                status = await consume(session, ctx.guild.id, ctx.author.id)
             if status is not None:
-                animal = _weighted_pick(animals, rarity_odds(status.luck_level))
+                # Locked tiers stay locked in a special roll too; the luck
+                # odds apply among the milestone's tiers.
+                animal = _weighted_pick(pool, rarity_odds(status.luck_level))
                 # Every roll pays its rarity's points, in the same transaction
                 # as the roll it was spent on.
                 reached = milestones.completed(species, animals)
@@ -582,8 +623,19 @@ class Rolls(commands.Cog):
                 )
                 collection_wishers = await _collection_wishers(session, ctx.guild.id, animal)
 
-        if not animals:
+        if not pool:
             await ctx.send("Il n'y a encore aucun animal ! Lance `python -m bot.seed`.")
+            return
+        if status is None and special is not None:
+            async with SessionLocal() as session:
+                unlocked = (await get_status(session, ctx.guild.id, ctx.author.id)).special_roll
+            if unlocked:
+                await ctx.send(
+                    f"Tu as déjà utilisé ton roll spécial aujourd'hui ! "
+                    f"Il revient dans {format_wait(seconds_until_special_reset())}."
+                )
+            else:
+                await ctx.send("Débloque d'abord le roll spécial dans le `/shop`.")
             return
         if status is None:
             await ctx.send(
@@ -616,9 +668,15 @@ class Rolls(commands.Cog):
                 inline=False,
             )
         view = RescueView(animal, ctx.guild.id, appeal, ctx.author.id)
-        counters = f"-# +{points} {CURRENCY_NAME} · {status.rolls_left}/{status.max_rolls} rolls restants"
-        if status.bonus_rolls:
-            counters += f" (+{status.bonus_rolls} bonus)"
+        if special is not None:
+            counters = (
+                f"-# Roll spécial · {special.badge} {special.label} · +{points} {CURRENCY_NAME}"
+                f" · prochain dans {format_wait(seconds_until_special_reset())}"
+            )
+        else:
+            counters = f"-# +{points} {CURRENCY_NAME} · {status.rolls_left}/{status.max_rolls} rolls restants"
+            if status.bonus_rolls:
+                counters += f" (+{status.bonus_rolls} bonus)"
         counters += f" · {status.claims}/{status.max_claims} claims"
         if status.bonus_claims:
             counters += f" (+{status.bonus_claims} bonus)"

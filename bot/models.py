@@ -123,3 +123,8 @@ class PlayerState(Base):
     trades_period: Mapped[int] = mapped_column(default=0, server_default="0")
     # How many times the player prestiged; also picks the next required milestone.
     prestige_level: Mapped[int] = mapped_column(default=0, server_default="0")
+    # The special roll (/rescue <groupe>): 1 once bought in the shop. Usable once
+    # per day: special_roll_period is the day index (see economy.py) of the
+    # last use, 0 for never.
+    special_roll: Mapped[int] = mapped_column(default=0, server_default="0")
+    special_roll_period: Mapped[int] = mapped_column(default=0, server_default="0")

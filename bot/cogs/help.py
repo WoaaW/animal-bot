@@ -25,7 +25,9 @@ class Help(commands.Cog):
                     params = "".join(f" <{name}>" for name in sub.clean_params)
                     lines.append(f"**/{command.name} {sub.name}{params}** — {sub.description}")
                 continue
-            params = "".join(f" <{name}>" for name in command.clean_params)
+            # extras["hidden_params"]: options kept out of /help on purpose.
+            hidden = command.extras.get("hidden_params", [])
+            params = "".join(f" <{name}>" for name in command.clean_params if name not in hidden)
             aliases = "".join(f" (ou /{alias})" for alias in command.aliases)
             lines.append(f"**/{command.name}{params}**{aliases} — {command.description}")
         lines.append(f"\nChaque commande marche aussi avec `{PREFIX}` (ex. `{PREFIX}rescue`).")
