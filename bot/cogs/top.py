@@ -32,6 +32,50 @@ def _ranking(values: dict[int, float], fmt, author_id: int) -> str:
     return "\n".join(lines)
 
 
+class TopView(discord.ui.View):
+    """One button per ranking; the shown one is highlighted. Only the
+    invoker switches, since the message is public."""
+
+    def __init__(self, pages: list[tuple[str, discord.Embed]], owner_id: int):
+        super().__init__(timeout=180)
+        self.owner_id = owner_id
+        self.message: discord.Message | None = None
+        self.buttons = []
+        for label, embed in pages:
+            button = discord.ui.Button(label=label)
+            button.callback = self._switch(embed, button)
+            self.add_item(button)
+            self.buttons.append(button)
+        self._highlight(self.buttons[0])
+
+    def _highlight(self, current: discord.ui.Button) -> None:
+        for button in self.buttons:
+            button.style = discord.ButtonStyle.primary if button is current else discord.ButtonStyle.secondary
+            button.disabled = button is current
+
+    def _switch(self, embed: discord.Embed, button: discord.ui.Button):
+        async def callback(interaction: discord.Interaction) -> None:
+            self._highlight(button)
+            await interaction.response.edit_message(embed=embed, view=self)
+
+        return callback
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("Lance `/top` toi-même pour changer de classement !", ephemeral=True)
+            return False
+        return True
+
+    async def on_timeout(self) -> None:
+        for button in self.buttons:
+            button.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+
 class Top(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -75,20 +119,27 @@ class Top(commands.Cog):
                 reached = milestones.completed(owned, pool)
                 income[user_id] = reserve_rate(base[user_id], total_bonus(owned), milestone_bonus(len(reached)))
 
-        embed = discord.Embed(title=f"Classements de {ctx.guild.name}", color=discord.Color.gold())
-        # Mentions inside embeds show names without pinging.
-        embed.add_field(name="Score", value=_ranking(score, str, ctx.author.id), inline=False)
-        embed.add_field(
-            name=f"Revenu des totems ({CURRENCY_NAME}/h)",
-            value=_ranking(income, format_rate, ctx.author.id),
-            inline=False,
-        )
-        embed.add_field(
-            name=f"Collections complétées (sur {len(COLLECTIONS)})",
-            value=_ranking(collections, str, ctx.author.id),
-            inline=False,
-        )
-        await ctx.send(embed=embed)
+        # One page per ranking. Mentions inside embeds show names without pinging.
+        rankings = [
+            ("Score", "Score", _ranking(score, str, ctx.author.id)),
+            ("Revenu", f"Revenu des totems ({CURRENCY_NAME}/h)", _ranking(income, format_rate, ctx.author.id)),
+            (
+                "Collections",
+                f"Collections complétées (sur {len(COLLECTIONS)})",
+                _ranking(collections, str, ctx.author.id),
+            ),
+        ]
+        pages = [
+            (
+                button,
+                discord.Embed(
+                    title=f"Top {title} · {ctx.guild.name}", description=text, color=discord.Color.gold()
+                ),
+            )
+            for button, title, text in rankings
+        ]
+        view = TopView(pages, ctx.author.id)
+        view.message = await ctx.send(embed=pages[0][1], view=view)
 
 
 async def setup(bot: commands.Bot):
