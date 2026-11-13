@@ -139,19 +139,17 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
         f"Tes chances : {_format_appeal_odds(appeal_odds(status.appeal_level))}\n"
         f"Au niveau suivant : {_format_appeal_odds(appeal_odds(status.appeal_level + 1))}",
     )
-    special_maxed = upgrade_maxed("special", status.special_roll)
+    special = status.special_roll
+    special_maxed = upgrade_maxed("special", special)
     fields["special"] = (
-        f"🟠 Roll spécial — {'débloqué' if special_maxed else _cost(status, 'special')}",
-        ("Débloqué : " if special_maxed else "Débloque ")
-        + "un roll par jour parmi les animaux du milestone de ton choix (`/rescue <groupe>`), "
-        "en plus de tes rolls habituels.",
+        f"🟠 Roll spécial — {_cost(status, 'special')}",
+        (f"**{special}** rolls spéciaux par jour" if special_maxed
+         else f"{special} → **{special + 1}** roll{'s' if special else ''} spécia{'ux' if special else 'l'} par jour")
+        + " parmi les animaux du milestone de ton choix (`/rescue <groupe>`), en plus de tes rolls habituels.",
     )
     for upgrade in visible_upgrades(status):
         name, value = fields[upgrade]
-        # A one-time unlock has no levels to show a bar for.
-        if upgrade_max_level(upgrade) != 1:
-            value = f"{_progress(status, upgrade)}\n{value}"
-        embed.add_field(name=name, value=value, inline=False)
+        embed.add_field(name=name, value=f"{_progress(status, upgrade)}\n{value}", inline=False)
     return embed
 
 
@@ -159,9 +157,10 @@ def _special_line(status: PlayerStatus) -> str:
     """/balance's line on the special roll, once unlocked."""
     if not status.special_roll:
         return ""
-    if status.special_roll_ready:
-        return "\nRoll spécial : **disponible** (`/rescue <groupe>`)"
-    return f"\nRoll spécial : revient dans {format_wait(seconds_until_special_reset())}"
+    line = f"\nRolls spéciaux : **{status.special_rolls_left}/{status.special_roll}** (`/rescue <groupe>`)"
+    if status.special_rolls_left < status.special_roll:
+        line += f" (recharge dans {format_wait(seconds_until_special_reset())})"
+    return line
 
 
 class ShopView(discord.ui.View):

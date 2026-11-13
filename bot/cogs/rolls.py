@@ -631,8 +631,8 @@ class Rolls(commands.Cog):
                 unlocked = (await get_status(session, ctx.guild.id, ctx.author.id)).special_roll
             if unlocked:
                 await ctx.send(
-                    f"Tu as déjà utilisé ton roll spécial aujourd'hui ! "
-                    f"Il revient dans {format_wait(seconds_until_special_reset())}."
+                    f"Tu as déjà utilisé tes rolls spéciaux aujourd'hui ! "
+                    f"Ils reviennent dans {format_wait(seconds_until_special_reset())}."
                 )
             else:
                 await ctx.send("Débloque d'abord le roll spécial dans le `/shop`.")
@@ -671,7 +671,7 @@ class Rolls(commands.Cog):
         if special is not None:
             counters = (
                 f"-# Roll spécial · {special.badge} {special.label} · +{points} {CURRENCY_NAME}"
-                f" · prochain dans {format_wait(seconds_until_special_reset())}"
+                f" · {status.special_rolls_left}/{status.special_roll} rolls spéciaux restants"
             )
         else:
             counters = f"-# +{points} {CURRENCY_NAME} · {status.rolls_left}/{status.max_rolls} rolls restants"
