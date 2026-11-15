@@ -48,9 +48,10 @@ async function fetchJSON(url) {
 // Sign in with Discord (bot/web/auth.py): only the servers the visitor is in.
 function showLogin() {
   const failed = new URLSearchParams(location.search).has("login");
+  document.getElementById("guild-name").textContent = "Capybabot";
+  document.title = "Capybabot";
   main().innerHTML = `<div class="card login">
-    <h2>Connexion</h2>
-    <p>Connecte-toi avec ton compte Discord : le site montre les serveurs dont tu es membre.</p>
+    <h2>Connexion requise</h2>
     ${failed ? `<p class="small" style="color:var(--warn)">La connexion n'a pas abouti, réessaie.</p>` : ""}
     <a class="login-button" href="/login">Se connecter avec Discord</a>
   </div>`;
