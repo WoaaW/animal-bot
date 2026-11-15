@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Réserve des animaux</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐾</text></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img id="guild-icon" alt="" hidden>
+      <div>
+        <h1 id="guild-name">Réserve des animaux</h1>
+        <p id="updated" class="muted"></p>
+      </div>
+    </div>
+    <select id="guild-select" aria-label="Serveur" hidden></select>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#/classement" data-tab="classement">Classement</a>
+      <a href="#/joueur" data-tab="joueur">Joueurs</a>
+      <a href="#/echanges" data-tab="echanges">Échanges</a>
+      <a href="#/animaux" data-tab="animaux">Animaux</a>
+    </nav>
+  </header>
+  <main id="main"><p class="muted">Chargement…</p></main>
+  <footer class="muted">
+    Données lues dans la base du bot à chaque chargement · descriptions et photos : Wikipédia (CC BY-SA)
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
