@@ -13,6 +13,7 @@ from aiohttp import web
 
 from ..config import DISCORD_TOKEN
 from ..db import SessionLocal, init_db
+from . import auth
 from .data import guild_data, guild_ids
 from .names import Names
 
@@ -30,9 +31,29 @@ async def index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(STATIC / "index.html")
 
 
+def visitor(request: web.Request) -> dict | None:
+    """The signed-in user; 401 when sign-in is on and nobody is."""
+    user = auth.current_user(request)
+    if auth.ENABLED and user is None:
+        raise web.HTTPUnauthorized()
+    return user
+
+
+async def can_see(user: dict | None, guild_id: int) -> bool:
+    return user is None or await names.is_member(guild_id, int(user["id"]))
+
+
+async def api_me(request: web.Request) -> web.Response:
+    return web.json_response({"auth": auth.ENABLED, "user": auth.current_user(request)})
+
+
 async def api_guilds(request: web.Request) -> web.Response:
+    user = visitor(request)
     async with SessionLocal() as session:
         ids = await guild_ids(session)
+    # Only the servers the visitor is in.
+    allowed = await asyncio.gather(*(can_see(user, g) for g in ids))
+    ids = [g for g, ok in zip(ids, allowed) if ok]
     guilds = await asyncio.gather(*(names.guild(g) for g in ids))
     return web.json_response([{"id": str(g), **info} for g, info in zip(ids, guilds)])
 
@@ -42,6 +63,8 @@ async def api_guild(request: web.Request) -> web.Response:
         guild_id = int(request.match_info["guild_id"])
     except ValueError:
         raise web.HTTPNotFound()
+    if not await can_see(visitor(request), guild_id):
+        raise web.HTTPForbidden()
     async with SessionLocal() as session:
         if guild_id not in await guild_ids(session):
             raise web.HTTPNotFound()
@@ -68,6 +91,10 @@ async def on_cleanup(app: web.Application) -> None:
 def make_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", index)
+    app.router.add_get("/login", auth.login)
+    app.router.add_get(auth.REDIRECT_PATH, auth.callback)
+    app.router.add_get("/logout", auth.logout)
+    app.router.add_get("/api/me", api_me)
     app.router.add_get("/api/guilds", api_guilds)
     app.router.add_get("/api/guilds/{guild_id}", api_guild)
     app.router.add_static("/static", STATIC)
@@ -79,6 +106,9 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     # Same schema upgrades as the bot, in case the site starts first.
     await init_db()
+    if not auth.ENABLED:
+        print("Connexion Discord désactivée (DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET absents) : "
+              "tout visiteur voit tous les serveurs.", flush=True)
     runner = web.AppRunner(make_app())
     await runner.setup()
     await web.TCPSite(runner, HOST, PORT).start()

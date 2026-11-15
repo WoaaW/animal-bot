@@ -58,6 +58,18 @@ class Names:
 
         return await self._cached(f"g{guild_id}", fetch)
 
+    async def is_member(self, guild_id: int, user_id: int) -> bool:
+        """Whether the user is in the guild. Only a yes is cached (like
+        names): a no may be a passing API error, and is asked again."""
+        key = f"in{guild_id}:{user_id}"
+        hit = self._cache.get(key)
+        if hit is not None and time.time() - hit[0] < CACHE_SECONDS:
+            return True
+        if await self._get(f"/guilds/{guild_id}/members/{user_id}") is None:
+            return False
+        self._cache[key] = (time.time(), {})
+        return True
+
     async def member(self, guild_id: int, user_id: int) -> dict:
         """Server nickname and avatar if they're still a member, else the
         account's, else a placeholder."""

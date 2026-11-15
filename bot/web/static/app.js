@@ -13,6 +13,7 @@ const state = {
   animalsFilter: { text: "", rarity: "", collection: "", owned: true, doubles: false },
   animalsCards: false, // "Fiches" view instead of the table
   tradesSingles: false,
+  me: null, // the signed-in Discord user ({id, name, avatar}), if sign-in is on
 };
 
 const nf = new Intl.NumberFormat("fr-FR");
@@ -37,21 +38,50 @@ function storage(key, value) {
 
 async function fetchJSON(url) {
   const response = await fetch(url);
+  if (response.status === 401) { showLogin(); throw new Error("connexion requise"); }
   if (!response.ok) throw new Error(`${url} : ${response.status}`);
   return response.json();
 }
 
 // ---------- Data ----------
 
+// Sign in with Discord (bot/web/auth.py): only the servers the visitor is in.
+function showLogin() {
+  const failed = new URLSearchParams(location.search).has("login");
+  main().innerHTML = `<div class="card login">
+    <h2>Connexion</h2>
+    <p>Connecte-toi avec ton compte Discord : le site montre les serveurs dont tu es membre.</p>
+    ${failed ? `<p class="small" style="color:var(--warn)">La connexion n'a pas abouti, réessaie.</p>` : ""}
+    <a class="login-button" href="/login">Se connecter avec Discord</a>
+  </div>`;
+}
+
+function showUser() {
+  const box = document.getElementById("user");
+  if (!state.me) return;
+  box.hidden = false;
+  box.innerHTML = `<img class="avatar" src="${esc(state.me.avatar)}" alt=""><span>${esc(state.me.name)}</span>
+    <a href="/logout" class="small">Se déconnecter</a>`;
+}
+
 async function boot() {
   try {
+    const me = await fetchJSON("/api/me");
+    state.me = me.user;
+    if (me.auth && !me.user) { showLogin(); return; }
+    showUser();
+    if (location.search) history.replaceState(null, "", location.pathname + location.hash);
     state.guilds = await fetchJSON("/api/guilds");
   } catch (error) {
-    main().innerHTML = `<p class="empty">Impossible de joindre le serveur (${esc(error.message)}).</p>`;
+    if (error.message !== "connexion requise") {
+      main().innerHTML = `<p class="empty">Impossible de joindre le serveur (${esc(error.message)}).</p>`;
+    }
     return;
   }
   if (!state.guilds.length) {
-    main().innerHTML = `<p class="empty">Aucun serveur n'a encore de joueur dans la base.</p>`;
+    main().innerHTML = state.me
+      ? `<p class="empty">Tu n'es membre d'aucun serveur où le bot a des joueurs.</p>`
+      : `<p class="empty">Aucun serveur n'a encore de joueur dans la base.</p>`;
     return;
   }
   const saved = storage("guild");
@@ -428,7 +458,7 @@ function offerRow(o, giver, receiver, showWho) {
 }
 
 function viewTrades(id) {
-  const me = state.players.get(id);
+  const me = state.players.get(id ?? state.me?.id);
   const singles = `<label class="check"><input type="checkbox" id="singles" ${state.tradesSingles ? "checked" : ""}> Inclure les derniers exemplaires (pas seulement les doublons)</label>`;
   if (!me) {
     return `<div class="toolbar">${playerSelect("", "echanges", "Je suis…")}</div>
