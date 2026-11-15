@@ -57,7 +57,7 @@ SPECIAL_ROLL_RESET_SECONDS = TRADE_RESET_SECONDS
 # The reserve: rescued animals put on show earn points per hour while the
 # player is away: a base by rarity (keys must match RARITY_ODDS) times a
 # multiplier for their appeal, a 1-5 star stat rolled with each roll.
-RESERVE_BASE_INCOME = {"common": 3, "uncommon": 6, "rare": 9, "epic": 15, "legendary": 24, "mythic": 36}
+RESERVE_BASE_INCOME = {"common": 3, "uncommon": 6, "rare": 9, "epic": 15, "legendary": 24, "mythic": 60}
 # Appeal stars → (chance in %, income multiplier).
 APPEAL = {1: (45, 1), 2: (30, 1.5), 3: (15, 2), 4: (8, 3), 5: (2, 5)}
 # Each shop appeal level adds APPEAL_STEP × (stars - 1) to a star count's
