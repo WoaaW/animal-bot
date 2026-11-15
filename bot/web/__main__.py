@@ -82,7 +82,7 @@ async def main() -> None:
     runner = web.AppRunner(make_app())
     await runner.setup()
     await web.TCPSite(runner, HOST, PORT).start()
-    print(f"Site des stats : http://{'localhost' if HOST == '127.0.0.1' else HOST}:{PORT}")
+    print(f"Site des stats : http://{'localhost' if HOST == '127.0.0.1' else HOST}:{PORT}", flush=True)
     await asyncio.Event().wait()
 
 
