@@ -398,7 +398,6 @@ function offers(giver, receiver, includeSingles) {
       const count = receiver.milestoneProgress[a.milestone];
       if (count === m.size - 1) { reasons.push(`<span class="chip good">complète ${m.badge} ${esc(m.label)}</span>`); value += 120; }
     }
-    if (!reasons.length) reasons.push(`<span class="chip">nouvelle espèce</span>`);
     const cost = [];
     if (!double) {
       cost.push(`<span class="chip warn">son dernier exemplaire</span>`);
@@ -563,7 +562,7 @@ function animalsResult() {
           <td>${collectionChips(aid) || '<span class="muted">—</span>'}</td>
           <td class="small">${owners.map((p) => {
             const copies = p.bySpecies.get(aid);
-            return `<div>${who(p)} ${copies.length > 1 ? `<b>×${copies.length}</b> ` : ""}<span class="muted">${copies.map((c) => `${c.appeal}★${c.totem ? "🔺" : ""}`).join(" ")}</span></div>`;
+            return `<div class="owner">${who(p)} ${copies.length > 1 ? `<b>×${copies.length}</b> ` : ""}<span class="muted">${copies.map((c) => `${c.appeal}★${c.totem ? "🔺" : ""}`).join(" ")}</span></div>`;
           }).join("") || '<span class="muted">personne</span>'}</td>
           <td class="small">${wishers.map((p) => esc(p.name)).join(", ") || '<span class="muted">—</span>'}</td>
         </tr>`;

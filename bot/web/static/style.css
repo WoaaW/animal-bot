@@ -131,6 +131,9 @@ label.check { display: inline-flex; align-items: center; gap: 6px; cursor: point
 
 .avatar { width: 24px; height: 24px; border-radius: 50%; vertical-align: middle; flex: none; }
 .who { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-weight: 500; }
+/* A player then their auras: an inline-flex .who sits on its avatar's bottom
+   edge, which pushes the name above the auras next to it. */
+.owner { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 
 /* Tables */
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
