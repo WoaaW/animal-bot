@@ -101,7 +101,8 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
     embed = discord.Embed(
         title="Boutique",
         description=f"Tu as **{status.points}** {CURRENCY_NAME}.",
-        color=discord.Color.gold(),
+        # Not gold: that's the legendary rarity's color.
+        color=discord.Color.magenta(),
     )
     # upgrade -> (field name, field value). A maxed upgrade shows where the
     # player stands instead of "a → b".
