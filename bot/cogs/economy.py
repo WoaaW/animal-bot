@@ -20,7 +20,7 @@ from ..economy import (
     upgrade_maxed,
     upgrade_price,
 )
-from .rolls import RARITY_LABEL, RARITY_UNLOCK_LEVEL, format_rate, format_reserve_bonus, format_wait, rarity_odds
+from .rolls import MENU_COLOR, RARITY_LABEL, RARITY_UNLOCK_LEVEL, format_rate, format_reserve_bonus, format_wait, rarity_odds
 
 # The top tier stays a surprise until a player unlocks it.
 HIDDEN_TIER = "mythic"
@@ -101,8 +101,7 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
     embed = discord.Embed(
         title="Boutique",
         description=f"Tu as **{status.points}** {CURRENCY_NAME}.",
-        # Turquoise blue: not a rarity's color (gold is legendary, red mythic).
-        color=discord.Color(0x00BCD4),
+        color=MENU_COLOR,
     )
     # upgrade -> (field name, field value). A maxed upgrade shows where the
     # player stands instead of "a → b".

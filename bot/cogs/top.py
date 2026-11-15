@@ -9,7 +9,7 @@ from ..db import SessionLocal
 from ..economy import CURRENCY_NAME, animal_score, milestone_bonus, reserve_income, reserve_rate
 from ..models import Animal, Rescue
 from ..species_collections import COLLECTIONS, completed, total_bonus
-from .rolls import format_rate
+from .rolls import MENU_COLOR, format_rate
 
 # Players shown per ranking.
 TOP_SIZE = 10
@@ -133,7 +133,7 @@ class Top(commands.Cog):
             (
                 button,
                 discord.Embed(
-                    title=f"Top {title} · {ctx.guild.name}", description=text, color=discord.Color.gold()
+                    title=f"Top {title} · {ctx.guild.name}", description=text, color=MENU_COLOR
                 ),
             )
             for button, title, text in rankings

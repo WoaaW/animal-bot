@@ -5,7 +5,7 @@ from discord.ext import commands
 from ..species_collections import COLLECTION_TARGET, COLLECTIONS, DIFFICULTY, progress, rescued_species, total_bonus
 from ..db import SessionLocal
 from ..models import Animal
-from .rolls import _fold
+from .rolls import MENU_COLOR, _fold
 
 
 def _bar(count: int) -> str:
@@ -59,7 +59,7 @@ class Collections(commands.Cog):
                 f"Sauve {COLLECTION_TARGET} espèces différentes d'un groupe pour compléter sa collection. "
                 "Les espèces d'un groupe : `/collections <groupe>`."
             ),
-            color=discord.Color.gold(),
+            color=MENU_COLOR,
         )
         # One field per difficulty, easiest first (at most a handful of lines
         # each, well under the 1024-char field limit).

@@ -9,7 +9,7 @@ from sqlalchemy.dialects.sqlite import insert
 from ..db import SessionLocal
 from ..models import Animal, CollectionWish, Rescue, Wish
 from ..species_collections import COLLECTION_TARGET, COLLECTIONS, Collection, progress, rescued_species
-from .rolls import RARITY_LABEL, RARITY_ORDER, _fold, paginate, send_pages
+from .rolls import MENU_COLOR, RARITY_LABEL, RARITY_ORDER, _fold, paginate, send_pages
 
 # Wishlist size per player and guild. A long list would ping on most rolls.
 MAX_WISHES = 10
@@ -102,7 +102,7 @@ class Wishes(commands.Cog):
         if collection is not None:
             count = progress(species, collection)
             content = f"Collection souhaitée : **{collection.label}** ({count}/{COLLECTION_TARGET})"
-        await send_pages(ctx, paginate(title, lines, discord.Color.gold()), content=content)
+        await send_pages(ctx, paginate(title, lines, MENU_COLOR), content=content)
 
     @wish.command(name="add", description="Ajoute un animal ou une collection à ta wishlist.")
     @app_commands.describe(animal="L'animal ou la collection à souhaiter")

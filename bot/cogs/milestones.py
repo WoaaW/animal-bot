@@ -8,7 +8,7 @@ from ..economy import CURRENCY_NAME, MILESTONE_POINTS_BONUS
 from ..milestones import MILESTONES, progress
 from ..models import Animal
 from ..species_collections import rescued_species
-from .rolls import _fold
+from .rolls import MENU_COLOR, _fold
 
 BAR_WIDTH = 20
 
@@ -73,7 +73,7 @@ class Milestones(commands.Cog):
                 "Les espèces d'un groupe : `/milestones <groupe>`.\n\n"
                 + "\n".join(lines)
             ),
-            color=discord.Color.gold(),
+            color=MENU_COLOR,
         )
 
     @milestones.autocomplete("group")

@@ -9,7 +9,7 @@ from ..milestones import MILESTONES
 from ..models import Animal, Rescue
 from ..species_collections import COLLECTIONS, completed, rescued_species
 from .totems import _income, _rescues
-from .rolls import animal_embed, animal_header, format_appeal, format_rate, format_reserve_bonus, reserve_pages
+from .rolls import MENU_COLOR, animal_embed, animal_header, format_appeal, format_rate, format_reserve_bonus, reserve_pages
 from .species_collections import Collections
 
 
@@ -99,7 +99,7 @@ class ProfileView(discord.ui.View):
 
 
 def _empty(text: str) -> discord.Embed:
-    return discord.Embed(description=text, color=discord.Color.gold())
+    return discord.Embed(description=text, color=MENU_COLOR)
 
 
 class Profile(commands.Cog):
@@ -137,7 +137,7 @@ class Profile(commands.Cog):
                 f"Totems : **{reserve.used}/{reserve.max_slots}**, {format_rate(reserve.rate)} {CURRENCY_NAME}/h"
                 + format_reserve_bonus(reserve)
             ),
-            color=discord.Color.gold(),
+            color=MENU_COLOR,
         )
         summary.set_thumbnail(url=target.display_avatar.url)
 

@@ -46,6 +46,9 @@ RARITY_COLOR = {
     "legendary": discord.Color.gold(),
     "mythic": discord.Color.dark_red(),
 }
+# Shop, profile, rankings, collections, milestones, wishlist: turquoise blue,
+# a color no rarity uses (gold would read as legendary).
+MENU_COLOR = discord.Color(0x00BCD4)
 # What players see; the English keys are only identifiers.
 RARITY_LABEL = {
     "common": "commun",
