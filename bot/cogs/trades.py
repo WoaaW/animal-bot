@@ -4,6 +4,7 @@ from discord.ext import commands
 
 from ..db import SessionLocal
 from ..economy import (
+    MAX_TRADE_ANIMALS,
     MAX_TRADES_PER_DAY,
     TradeResult,
     TradeSide,
@@ -18,23 +19,51 @@ from .rolls import _fold, format_wait
 TRADE_TIMEOUT_SECONDS = 300
 
 
+# Up to MAX_TRADE_ANIMALS (3) animals per side: one option each, since a slash
+# option holds a single value.
 class TradeOffer(commands.FlagConverter):
-    give_animal: str | None = commands.flag(default=None, description="L'animal que tu donnes")
-    want_animal: str | None = commands.flag(default=None, description="L'animal que tu demandes")
+    give_animal: str | None = commands.flag(default=None, description="Un animal que tu donnes")
+    give_animal_2: str | None = commands.flag(default=None, description="Un 2e animal que tu donnes")
+    give_animal_3: str | None = commands.flag(default=None, description="Un 3e animal que tu donnes")
+    want_animal: str | None = commands.flag(default=None, description="Un animal que tu demandes")
+    want_animal_2: str | None = commands.flag(default=None, description="Un 2e animal que tu demandes")
+    want_animal_3: str | None = commands.flag(default=None, description="Un 3e animal que tu demandes")
+
+    def gives(self) -> list[str]:
+        return [q for q in (self.give_animal, self.give_animal_2, self.give_animal_3) if q]
+
+    def wants(self) -> list[str]:
+        return [q for q in (self.want_animal, self.want_animal_2, self.want_animal_3) if q]
 
 
-def _pick_copy(rows: list[tuple[Rescue, Animal]], query: str) -> tuple[Rescue, Animal] | None:
-    """The copy `query` names. Autocomplete sends "#<rescue id>"; a typed name
-    picks the weakest copy, preferring one outside the reserve."""
+GIVE_OPTIONS = ("give_animal", "give_animal_2", "give_animal_3")
+WANT_OPTIONS = ("want_animal", "want_animal_2", "want_animal_3")
+assert len(GIVE_OPTIONS) == len(WANT_OPTIONS) == MAX_TRADE_ANIMALS
+
+
+def _pick_copy(rows: list[tuple[Rescue, Animal]], query: str, taken: set[int]) -> tuple[Rescue, Animal] | None:
+    """The copy `query` names, other than those already `taken` in this offer.
+    Autocomplete sends "#<rescue id>"; a typed name picks the weakest copy,
+    preferring one outside the reserve."""
     if query.startswith("#") and query[1:].isdigit():
-        return next((row for row in rows if row[0].id == int(query[1:])), None)
+        return next((row for row in rows if row[0].id == int(query[1:]) and row[0].id not in taken), None)
     needle = _fold(query)
-    matches = [row for row in rows if _fold(row[1].name) == needle]
+    matches = [row for row in rows if _fold(row[1].name) == needle and row[0].id not in taken]
     return min(matches, key=lambda row: (row[0].in_reserve, _income(row))) if matches else None
 
 
-def _describe(row: tuple[Rescue, Animal] | None) -> str:
-    return f"**{_label(row)}**" if row is not None else "Rien"
+def _describe(rows: list[tuple[Rescue, Animal]]) -> str:
+    return "\n".join(f"**{_label(row)}**" for row in rows) or "Rien"
+
+
+def _taken_in_options(interaction: discord.Interaction, options: tuple[str, ...]) -> set[int]:
+    """Copies already picked by autocomplete in the side's other options."""
+    taken = set()
+    for name in options:
+        value = getattr(interaction.namespace, name, None)
+        if isinstance(value, str) and value.startswith("#") and value[1:].isdigit():
+            taken.add(int(value[1:]))
+    return taken
 
 
 class TradeView(discord.ui.View):
@@ -72,13 +101,13 @@ class TradeView(discord.ui.View):
     def _failure_text(self, result: TradeResult) -> str:
         who = f"<@{result.failed_user_id}>"
         if result.failure == "reserve":
-            return f"Échange impossible : l'animal de {who} est un de ses totems (`/totem remove`). L'offre reste ouverte."
+            return f"Échange impossible : un animal de {who} est un de ses totems (`/totem remove`). L'offre reste ouverte."
         if result.failure == "limit":
             return (
                 f"Échange impossible : {who} a déjà fait ses {MAX_TRADES_PER_DAY} échanges du jour "
                 f"(recharge dans {format_wait(seconds_until_trade_reset())}). L'offre reste ouverte."
             )
-        return f"Échange annulé : l'animal de {who} ne lui appartient plus."
+        return f"Échange annulé : un animal de {who} ne lui appartient plus."
 
     @discord.ui.button(label="Accepter", style=discord.ButtonStyle.success)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -156,9 +185,10 @@ class Trades(commands.Cog):
         if member.bot or member.id == ctx.author.id:
             await ctx.send("Choisis un autre joueur.")
             return
-        if not (offer.give_animal or offer.want_animal):
+        if not (offer.gives() or offer.wants()):
             await ctx.send(
-                "Indique ce que tu donnes ou demandes : `give_animal`, `want_animal`.",
+                f"Indique ce que tu donnes ou demandes (jusqu'à {MAX_TRADE_ANIMALS} animaux de chaque côté) : "
+                "`give_animal`, `want_animal`.",
             )
             return
         await ctx.defer()
@@ -175,29 +205,38 @@ class Trades(commands.Cog):
             )
             return
 
-        given = wanted = None
-        if offer.give_animal:
-            given = _pick_copy(await _rescues(ctx.guild.id, ctx.author.id), offer.give_animal)
-            if given is None:
-                await ctx.send(f"Tu n'as aucun « {offer.give_animal} ».")
-                return
-            if given[0].in_reserve:
-                await ctx.send(f"**{given[1].name}** est un de tes totems : retire-le d'abord avec `/totem remove`.")
-                return
-        if offer.want_animal:
-            wanted = _pick_copy(await _rescues(ctx.guild.id, member.id), offer.want_animal)
-            if wanted is None:
-                await ctx.send(
-                    f"{member.mention} n'a aucun « {offer.want_animal} ».",
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
-            if wanted[0].in_reserve:
-                await ctx.send(
-                    f"**{wanted[1].name}** est un totem de {member.mention}, qui doit d'abord le retirer.",
-                    allowed_mentions=discord.AllowedMentions.none(),
-                )
-                return
+        given: list[tuple[Rescue, Animal]] = []
+        if offer.gives():
+            rows = await _rescues(ctx.guild.id, ctx.author.id)
+            for query in offer.gives():
+                row = _pick_copy(rows, query, {r.id for r, _ in given})
+                if row is None:
+                    other = " autre" if any(_fold(a.name) == _fold(query) for _, a in given) else ""
+                    await ctx.send(f"Tu n'as aucun{other} « {query} ».")
+                    return
+                if row[0].in_reserve:
+                    await ctx.send(f"**{row[1].name}** est un de tes totems : retire-le d'abord avec `/totem remove`.")
+                    return
+                given.append(row)
+        wanted: list[tuple[Rescue, Animal]] = []
+        if offer.wants():
+            rows = await _rescues(ctx.guild.id, member.id)
+            for query in offer.wants():
+                row = _pick_copy(rows, query, {r.id for r, _ in wanted})
+                if row is None:
+                    other = " autre" if any(_fold(a.name) == _fold(query) for _, a in wanted) else ""
+                    await ctx.send(
+                        f"{member.mention} n'a aucun{other} « {query} ».",
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
+                if row[0].in_reserve:
+                    await ctx.send(
+                        f"**{row[1].name}** est un totem de {member.mention}, qui doit d'abord le retirer.",
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
+                wanted.append(row)
 
         embed = discord.Embed(title="Offre d'échange", color=discord.Color.teal())
         embed.add_field(name=f"{ctx.author.display_name} donne", value=_describe(given))
@@ -207,8 +246,8 @@ class Trades(commands.Cog):
             ctx.guild.id,
             ctx.author,
             member,
-            TradeSide(ctx.author.id, given[0].id if given else None),
-            TradeSide(member.id, wanted[0].id if wanted else None),
+            TradeSide(ctx.author.id, tuple(r.id for r, _ in given)),
+            TradeSide(member.id, tuple(r.id for r, _ in wanted)),
         )
         view.message = await ctx.send(
             member.mention,
@@ -217,19 +256,46 @@ class Trades(commands.Cog):
             allowed_mentions=discord.AllowedMentions(users=[member]),
         )
 
-    @trade.autocomplete("give_animal")
-    async def give_autocomplete(self, interaction: discord.Interaction, current: str):
+    async def _give_choices(self, interaction: discord.Interaction, current: str, option: str):
         if interaction.guild is None:
             return []
-        return _choices(await _rescues(interaction.guild.id, interaction.user.id), current, in_reserve=False)
+        taken = _taken_in_options(interaction, tuple(o for o in GIVE_OPTIONS if o != option))
+        rows = [row for row in await _rescues(interaction.guild.id, interaction.user.id) if row[0].id not in taken]
+        return _choices(rows, current, in_reserve=False)
 
-    @trade.autocomplete("want_animal")
-    async def want_autocomplete(self, interaction: discord.Interaction, current: str):
+    async def _want_choices(self, interaction: discord.Interaction, current: str, option: str):
         member = interaction.namespace.member
         if interaction.guild is None or member is None:
             return []
-        return _choices(await _rescues(interaction.guild.id, member.id), current, in_reserve=False)
+        taken = _taken_in_options(interaction, tuple(o for o in WANT_OPTIONS if o != option))
+        rows = [row for row in await _rescues(interaction.guild.id, member.id) if row[0].id not in taken]
+        return _choices(rows, current, in_reserve=False)
 
+    # One callback per option (autocomplete needs one per parameter); each
+    # leaves out the copies already picked in the side's other options.
+    @trade.autocomplete("give_animal")
+    async def give_autocomplete(self, interaction: discord.Interaction, current: str):
+        return await self._give_choices(interaction, current, "give_animal")
+
+    @trade.autocomplete("give_animal_2")
+    async def give_autocomplete_2(self, interaction: discord.Interaction, current: str):
+        return await self._give_choices(interaction, current, "give_animal_2")
+
+    @trade.autocomplete("give_animal_3")
+    async def give_autocomplete_3(self, interaction: discord.Interaction, current: str):
+        return await self._give_choices(interaction, current, "give_animal_3")
+
+    @trade.autocomplete("want_animal")
+    async def want_autocomplete(self, interaction: discord.Interaction, current: str):
+        return await self._want_choices(interaction, current, "want_animal")
+
+    @trade.autocomplete("want_animal_2")
+    async def want_autocomplete_2(self, interaction: discord.Interaction, current: str):
+        return await self._want_choices(interaction, current, "want_animal_2")
+
+    @trade.autocomplete("want_animal_3")
+    async def want_autocomplete_3(self, interaction: discord.Interaction, current: str):
+        return await self._want_choices(interaction, current, "want_animal_3")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Trades(bot))

@@ -49,6 +49,9 @@ PRESTIGE_POINTS_BONUS = 25
 # Accepted trades per player per day, gifts included. Days are fixed clock slots
 # (midnight UTC), the same for everyone, like roll windows.
 MAX_TRADES_PER_DAY = 3
+# Animals each side can hand over in one trade (a trade counts once, whatever
+# the number of animals).
+MAX_TRADE_ANIMALS = 3
 TRADE_RESET_SECONDS = 24 * 3600
 # The special roll (a shop unlock) comes back once a day, on the same midnight
 # UTC as trades.
@@ -558,9 +561,10 @@ async def remove_from_reserve(session: AsyncSession, guild_id: int, user_id: int
 
 @dataclass(frozen=True)
 class TradeSide:
-    """What one player hands over in a trade."""
+    """What one player hands over in a trade: up to MAX_TRADE_ANIMALS rescues,
+    or none (a gift from the other side)."""
     user_id: int
-    rescue_id: int | None = None
+    rescue_ids: tuple[int, ...] = ()
 
 
 @dataclass
@@ -620,8 +624,8 @@ async def execute_trade(session: AsyncSession, guild_id: int, a: TradeSide, b: T
         if not await _consume_trade(session, guild_id, side.user_id):
             return TradeResult(failure="limit", failed_user_id=side.user_id)
     for side, other in ((a, b), (b, a)):
-        if side.rescue_id is not None:
-            reason = await _give_rescue(session, guild_id, side.rescue_id, side.user_id, other.user_id)
+        for rescue_id in side.rescue_ids:
+            reason = await _give_rescue(session, guild_id, rescue_id, side.user_id, other.user_id)
             if reason:
                 return TradeResult(failure=reason, failed_user_id=side.user_id)
 
