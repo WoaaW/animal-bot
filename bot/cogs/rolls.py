@@ -31,7 +31,7 @@ from ..economy import (
     seconds_until_reset,
     seconds_until_special_reset,
 )
-from ..models import Animal, CollectionWish, Rescue, Wish
+from ..models import Animal, CollectionWish, Rescue, Roll, Wish
 
 # Base weight of each tier, in % of the full table. A roll picks the tier
 # first, then an animal uniformly within it, so the odds don't depend on how
@@ -283,13 +283,21 @@ class RescueView(discord.ui.View):
             )
             return
         self.rescued = True
+        # Acknowledge before the database work: Discord drops the click after
+        # 3 s, and on the Pi's network the round trip alone can eat most of it.
+        try:
+            await interaction.response.defer()
+        except discord.NotFound:
+            # Too late already: nothing was rescued, the next click may try.
+            self.rescued = False
+            return
         async with SessionLocal() as session:
             claim = await consume_claim(session, self.guild_id, interaction.user.id)
             if claim is None:
                 # Nothing was rescued: let someone else (with a claim) try.
                 self.rescued = False
                 status = await get_status(session, self.guild_id, interaction.user.id)
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"Tu n'as pas de claim disponible ! Le prochain arrive dans {format_wait(status.next_claim_in)}.",
                     ephemeral=True,
                 )
@@ -321,7 +329,7 @@ class RescueView(discord.ui.View):
         button.disabled = True
         button.label = f"Sauvetage par {interaction.user.display_name}"
         # Don't stop the view: "En savoir plus" stays usable until the timeout.
-        await interaction.response.edit_message(view=self)
+        await interaction.edit_original_response(view=self)
         # Public announcement. The mention shows the name without pinging.
         message = (
             f"{interaction.user.mention} a sauvé **{self.animal.name}** · "
@@ -596,6 +604,21 @@ class Rolls(commands.Cog):
                 # Locked tiers stay locked in a special roll too; the luck
                 # odds apply among the milestone's tiers.
                 animal = _weighted_pick(pool, rarity_odds(status.luck_level))
+                # Rolled per roll, not per animal: the same species can come back
+                # with a better appeal, which makes rescuing it again worthwhile.
+                appeal = roll_appeal(status.appeal_level)
+                session.add(
+                    Roll(
+                        guild_id=ctx.guild.id,
+                        user_id=ctx.author.id,
+                        animal_id=animal.id,
+                        rarity=animal.rarity,
+                        appeal=appeal,
+                        luck_level=status.luck_level,
+                        appeal_level=status.appeal_level,
+                        special=special.label if special else None,
+                    )
+                )
                 # Every roll pays its rarity's points, in the same transaction
                 # as the roll it was spent on.
                 reached = milestones.completed(species, animals)
@@ -650,9 +673,6 @@ class Rolls(commands.Cog):
         milestone = milestones.milestone_of(animal)
         if milestone is not None:
             embed.title = f"{milestone.badge} {embed.title}"
-        # Rolled per roll, not per animal: the same species can come back
-        # with a better appeal, which makes rescuing it again worthwhile.
-        appeal = roll_appeal(status.appeal_level)
         embed.add_field(
             name="Aura",
             value=f"{format_appeal(appeal)} · {reserve_income(animal.rarity, appeal)} {CURRENCY_NAME}/h comme animal-totem",

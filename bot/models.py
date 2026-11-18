@@ -48,6 +48,26 @@ class Rescue(Base):
     animal: Mapped[Animal] = relationship()
 
 
+class Roll(Base):
+    """One row per roll, rescued or not, kept for statistics (how lucky a
+    player really is). The odds settings are copied at roll time, since the
+    player's upgrades and the pool's rarities change afterwards."""
+
+    __tablename__ = "rolls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    animal_id: Mapped[int] = mapped_column(ForeignKey("animals.id"))
+    rarity: Mapped[str] = mapped_column(String(20))
+    appeal: Mapped[int] = mapped_column()
+    luck_level: Mapped[int] = mapped_column()
+    appeal_level: Mapped[int] = mapped_column()
+    # The special roll (/rescue <groupe>): the milestone's label, else None.
+    special: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    rolled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Wish(Base):
     """An animal a player wants: they're pinged when someone else rolls it.
     Kept after a rescue, since a copy with a better appeal is still worth it."""

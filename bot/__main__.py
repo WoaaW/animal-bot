@@ -32,6 +32,20 @@ async def on_command_error(ctx: commands.Context, error: commands.CommandError):
     await commands.Bot.on_command_error(bot, ctx, error)  # default: log it
 
 
+# Discord drops an interaction not answered within 3 s ("Unknown interaction").
+# Log how old each one already is when it reaches us: a late arrival points to
+# the network, not to our code.
+LATE_INTERACTION_SECONDS = 1.5
+log = logging.getLogger("bot")
+
+
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    age = (discord.utils.utcnow() - interaction.created_at).total_seconds()
+    if age > LATE_INTERACTION_SECONDS:
+        log.warning("Interaction reçue avec %.1f s de retard (type %s)", age, interaction.type.name)
+
+
 @bot.event
 async def on_ready():
     print(f"Connecté en tant que {bot.user}")
