@@ -669,7 +669,8 @@ function viewAnimals() {
   const f = state.animalsFilter;
   return `
     <div class="toolbar">
-      <input type="search" id="f-text" placeholder="Chercher un animal…" value="${esc(f.text)}">
+      <input type="search" id="f-text" list="f-groups" placeholder="Chercher… ou @collection" value="${esc(f.text)}">
+      <datalist id="f-groups">${searchGroups().map((g) => `<option value="@${esc(g.label)}">`).join("")}</datalist>
       <select id="f-rarity"><option value="">Toutes les raretés</option>
         ${d.rarities.map((r) => `<option value="${r.key}" ${f.rarity === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select>
       <select id="f-collection"><option value="">Toutes les collections</option>
@@ -687,12 +688,12 @@ function viewAnimals() {
 function animalsResult() {
   const d = state.data;
   const f = state.animalsFilter;
-  const needle = fold(f.text);
+  const match = searchMatcher(f.text);
   const players = sortedPlayers();
   const rows = Object.entries(d.animals)
     .map(([aid, a]) => ({ aid: Number(aid), a, owners: players.filter((p) => p.bySpecies.has(Number(aid))) }))
     .filter(({ aid, a, owners }) =>
-      (!needle || fold(a.name).includes(needle) || fold(a.sci || "").includes(needle))
+      (!match || match(a))
       && (!f.rarity || a.rarity === f.rarity)
       && (f.collection === "" || a.collections.includes(Number(f.collection)))
       && (!f.owned || owners.length)
