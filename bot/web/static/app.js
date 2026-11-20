@@ -10,7 +10,7 @@ const state = {
   data: null,
   players: new Map(), // id -> player, with a few derived fields (see index())
   sort: { key: "score", desc: true },
-  animalsFilter: { text: "", rarity: "", collection: "", owned: true, doubles: false },
+  animalsFilter: { text: "", rarity: "", owned: true, doubles: false },
   animalsCards: false, // "Fiches" view instead of the table
   reserveCards: false, // same switch for a player's reserve
   reserveMissing: false, // also show the species the player lacks, greyed
@@ -673,8 +673,6 @@ function viewAnimals() {
       <datalist id="f-groups">${searchGroups().map((g) => `<option value="@${esc(g.label)}">`).join("")}</datalist>
       <select id="f-rarity"><option value="">Toutes les raretés</option>
         ${d.rarities.map((r) => `<option value="${r.key}" ${f.rarity === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select>
-      <select id="f-collection"><option value="">Toutes les collections</option>
-        ${d.collections.map((c, i) => `<option value="${i}" ${String(f.collection) === String(i) ? "selected" : ""}>${esc(c.label)}</option>`).join("")}</select>
       <label class="check"><input type="checkbox" id="f-owned" ${f.owned ? "checked" : ""}> Sauvés sur le serveur</label>
       <label class="check"><input type="checkbox" id="f-doubles" ${f.doubles ? "checked" : ""}> En double chez quelqu'un</label>
       <div class="segmented" role="group" aria-label="Affichage">
@@ -695,7 +693,6 @@ function animalsResult() {
     .filter(({ aid, a, owners }) =>
       (!match || match(a))
       && (!f.rarity || a.rarity === f.rarity)
-      && (f.collection === "" || a.collections.includes(Number(f.collection)))
       && (!f.owned || owners.length)
       && (!f.doubles || owners.some((p) => p.bySpecies.get(aid).length >= 2)))
     .sort((x, y) => RARITY_RANK[y.a.rarity] - RARITY_RANK[x.a.rarity] || x.a.name.localeCompare(y.a.name, "fr"));
@@ -755,7 +752,6 @@ bind.animaux = () => {
   const refresh = () => { document.getElementById("animals-result").innerHTML = animalsResult(); };
   document.getElementById("f-text").addEventListener("input", (e) => { f.text = e.target.value; refresh(); });
   document.getElementById("f-rarity").addEventListener("change", (e) => { f.rarity = e.target.value; refresh(); });
-  document.getElementById("f-collection").addEventListener("change", (e) => { f.collection = e.target.value; refresh(); });
   document.getElementById("f-owned").addEventListener("change", (e) => { f.owned = e.target.checked; refresh(); });
   document.getElementById("f-doubles").addEventListener("change", (e) => { f.doubles = e.target.checked; refresh(); });
   for (const button of main().querySelectorAll("[data-cards]")) {
