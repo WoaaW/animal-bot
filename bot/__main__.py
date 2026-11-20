@@ -73,6 +73,7 @@ async def main():
         await bot.load_extension("bot.cogs.trades")
         await bot.load_extension("bot.cogs.tutorial")
         await bot.load_extension("bot.cogs.image_review")  # temporary: /newimages
+        await bot.load_extension("bot.cogs.chat")  # answers when mentioned (Ollama)
         await bot.load_extension("bot.cogs.help")
         await bot.load_extension("bot.cogs.admin")
         await bot.start(DISCORD_TOKEN)
