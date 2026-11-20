@@ -15,6 +15,7 @@ const state = {
   reserveCards: false, // same switch for a player's reserve
   reserveMissing: false, // also show the species the player lacks, greyed
   reserveDoubles: false, // only species the player owns twice or more
+  reserveSearch: "", // name filter, "@Groupe" for a collection or milestone
   tradesSingles: false,
   me: null, // the signed-in Discord user ({id, name, avatar}), if sign-in is on
 };
@@ -312,6 +313,8 @@ function viewPlayer(id) {
 
     <div class="section-head">
       <h2>Réserve <span class="muted small">${p.species} espèces · ${p.rescues} animaux</span></h2>
+      <input type="search" id="r-search" list="r-groups" placeholder="Chercher… ou @collection" value="${esc(state.reserveSearch)}">
+      <datalist id="r-groups">${searchGroups().map((g) => `<option value="@${esc(g.label)}">`).join("")}</datalist>
       <label class="check"><input type="checkbox" id="r-missing" ${state.reserveMissing ? "checked" : ""} ${state.reserveDoubles ? "disabled" : ""}> Voir les manquants</label>
       <label class="check"><input type="checkbox" id="r-doubles" ${state.reserveDoubles ? "checked" : ""}> Doublons seulement</label>
       <div class="segmented" role="group" aria-label="Affichage">
@@ -400,10 +403,46 @@ function reserveRows(p) {
       if (!p.bySpecies.has(aid)) rows.push([aid, []]);
     }
   }
+  const match = searchMatcher(state.reserveSearch);
+  if (match) rows = rows.filter(([aid]) => match(animal(aid)));
   return rows.sort(([a, ca], [b, cb]) =>
     RARITY_RANK[animal(b).rarity] - RARITY_RANK[animal(a).rarity]
     || (cb[0]?.appeal ?? 0) - (ca[0]?.appeal ?? 0)
     || animal(a).name.localeCompare(animal(b).name, "fr"));
+}
+
+// Collections and milestones, searchable as "@Label".
+function searchGroups() {
+  const d = state.data;
+  return [
+    ...d.collections.map((c, i) => ({ label: c.label, has: (a) => a.collections.includes(i) })),
+    ...d.milestones.map((m, i) => ({ label: m.label, has: (a) => a.milestone === i })),
+  ];
+}
+
+// "lion" matches names (French or scientific); "@félidés" a group, by its
+// full label followed by an optional name ("@Félidés lion"), or by part of
+// its label while typing ("@féli"). Accent- and case-insensitive.
+function searchMatcher(query) {
+  let text = fold(query.trim());
+  if (!text) return null;
+  let groups = null;
+  if (text.startsWith("@")) {
+    const rest = text.slice(1);
+    const all = searchGroups();
+    const full = all
+      .filter((g) => rest === fold(g.label) || rest.startsWith(fold(g.label) + " "))
+      .sort((x, y) => y.label.length - x.label.length)[0];
+    if (full) {
+      groups = [full];
+      text = rest.slice(fold(full.label).length).trim();
+    } else {
+      groups = all.filter((g) => fold(g.label).includes(rest));
+      text = "";
+    }
+  }
+  return (a) => (!groups || groups.some((g) => g.has(a)))
+    && (!text || fold(a.name).includes(text) || fold(a.sci || "").includes(text));
 }
 
 function firstRescue(copies) {
@@ -414,7 +453,8 @@ function firstRescue(copies) {
 function reserveView(p) {
   const rows = reserveRows(p);
   if (!rows.length) {
-    return `<p class="empty card">${state.reserveDoubles ? "Aucun animal en double." : "Aucun animal sauvé."}</p>`;
+    const why = state.reserveSearch.trim() ? "Aucun animal ne correspond." : state.reserveDoubles ? "Aucun animal en double." : "Aucun animal sauvé.";
+    return `<p class="empty card">${why}</p>`;
   }
   const missing = rows.filter(([, copies]) => !copies.length).length;
   const count = `<p class="muted small">${rows.length - missing} espèce(s)${missing ? ` possédée(s), ${missing} manquante(s) en grisé` : ""}.</p>`;
@@ -461,6 +501,7 @@ bind.joueur = (id) => {
   const p = state.players.get(id);
   if (!p) return;
   const refresh = () => { document.getElementById("reserve-result").innerHTML = reserveView(p); };
+  document.getElementById("r-search").addEventListener("input", (e) => { state.reserveSearch = e.target.value; refresh(); });
   const missingBox = document.getElementById("r-missing");
   missingBox.addEventListener("change", () => { state.reserveMissing = missingBox.checked; refresh(); });
   document.getElementById("r-doubles").addEventListener("change", (e) => {
