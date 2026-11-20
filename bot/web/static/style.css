@@ -222,3 +222,6 @@ details .missing { padding: 6px 0 4px 16px; font-size: 0.85rem; }
 .segmented button + button { border-left: 1px solid var(--border); }
 .segmented button.active { background: var(--accent); color: var(--surface); }
 .no-image { aspect-ratio: 4 / 3; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); font-size: 0.85rem; }
+.section-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 28px 0 12px; }
+.section-head h2 { margin: 0; }
+.section-head .segmented { margin-left: auto; }

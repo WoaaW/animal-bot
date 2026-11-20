@@ -12,6 +12,7 @@ const state = {
   sort: { key: "score", desc: true },
   animalsFilter: { text: "", rarity: "", collection: "", owned: true, doubles: false },
   animalsCards: false, // "Fiches" view instead of the table
+  reserveCards: false, // same switch for a player's reserve
   tradesSingles: false,
   me: null, // the signed-in Discord user ({id, name, avatar}), if sign-in is on
 };
@@ -198,7 +199,7 @@ function render() {
   for (const select of main().querySelectorAll(".player-select")) {
     select.addEventListener("change", () => { location.hash = `#/${select.dataset.route}/${select.value}`; });
   }
-  bind[tab]?.();
+  bind[tab]?.(arg);
 }
 
 const bind = {};
@@ -307,8 +308,14 @@ function viewPlayer(id) {
       </div>
     </div>
 
-    <h2>Réserve <span class="muted small">${p.species} espèces · ${p.rescues} animaux</span></h2>
-    ${reserveTable(p)}`;
+    <div class="section-head">
+      <h2>Réserve <span class="muted small">${p.species} espèces · ${p.rescues} animaux</span></h2>
+      <div class="segmented" role="group" aria-label="Affichage">
+        <button type="button" data-reserve-cards="0" class="${state.reserveCards ? "" : "active"}">Liste</button>
+        <button type="button" data-reserve-cards="1" class="${state.reserveCards ? "active" : ""}">Fiches</button>
+      </div>
+    </div>
+    <div id="reserve-result">${reserveView(p)}</div>`;
 }
 
 function incomeOf(copy) {
@@ -377,24 +384,70 @@ function wishlistBlock(p) {
   return lines.length ? lines.join("") : `<span class="muted">Wishlist vide.</span>`;
 }
 
-function reserveTable(p) {
-  if (!p.copies.length) return `<p class="empty card">Aucun animal sauvé.</p>`;
-  const rows = [...p.bySpecies.entries()].sort(([a, ca], [b, cb]) =>
+// Rarest first, best appeal first within a rarity (copies are sorted best first).
+function reserveRows(p) {
+  return [...p.bySpecies.entries()].sort(([a, ca], [b, cb]) =>
     RARITY_RANK[animal(b).rarity] - RARITY_RANK[animal(a).rarity] || cb[0].appeal - ca[0].appeal);
+}
+
+function firstRescue(copies) {
+  const first = Math.min(...copies.map((c) => c.at || Infinity));
+  return Number.isFinite(first) ? new Date(first * 1000).toLocaleDateString("fr-FR") : "";
+}
+
+function reserveView(p) {
+  if (!p.copies.length) return `<p class="empty card">Aucun animal sauvé.</p>`;
+  if (state.reserveCards) {
+    return `<div class="grid cards">${reserveRows(p).map(([aid, copies]) => reserveCard(aid, copies)).join("")}</div>`;
+  }
+  return reserveTable(p);
+}
+
+// One card per species the player owns: photo, rarity, collections, their copies.
+function reserveCard(aid, copies) {
+  const a = animal(aid);
+  const milestone = a.milestone != null ? state.data.milestones[a.milestone] : null;
+  const date = firstRescue(copies);
+  return `<div class="card animal-card">
+    ${a.image ? `<img src="${esc(a.image)}" alt="${esc(a.name)}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
+    <div class="body">
+      <div class="name">${copies.some((c) => c.totem) ? "🔺 " : ""}${milestone ? `${milestone.badge} ` : ""}${animalName(aid, { dot: false })}${copies.length > 1 ? ` <b>×${copies.length}</b>` : ""}</div>
+      <div class="small muted"><i>${esc(a.sci)}</i></div>
+      <div class="small"><span class="rarity ${a.rarity}">${esc(rarityLabel(a.rarity))}</span>${a.iucn ? ` · <span class="muted">${esc(IUCN_LABEL[a.iucn] || a.iucn)} (${esc(a.iucn)})</span>` : ""}</div>
+      ${a.collections.length ? `<div style="margin-top:6px">${collectionChips(aid)}</div>` : ""}
+      <div class="small" style="margin-top:8px">${copies.map((c) => `<div>${stars(c.appeal)} <span class="muted">· ${a.income[c.appeal - 1]} baies/h${c.totem ? " · 🔺 totem" : ""}</span></div>`).join("")}</div>
+      ${date ? `<div class="small muted" style="margin-top:4px">Depuis le ${date}</div>` : ""}
+    </div>
+  </div>`;
+}
+
+function reserveTable(p) {
+  const rows = reserveRows(p);
   return `<div class="table-wrap"><table>
     <thead><tr><th>Animal</th><th>Rareté</th><th>Collections</th><th>Auras</th><th class="num">Depuis</th></tr></thead>
     <tbody>${rows.map(([aid, copies]) => {
       const a = animal(aid);
-      const first = Math.min(...copies.map((c) => c.at || Infinity));
       return `<tr>
         <td>${copies.some((c) => c.totem) ? "🔺 " : ""}${animalName(aid)}${copies.length > 1 ? ` <b>×${copies.length}</b>` : ""}</td>
         <td><span class="rarity ${a.rarity}">${esc(rarityLabel(a.rarity))}</span></td>
         <td>${collectionChips(aid) || '<span class="muted">—</span>'}</td>
         <td>${copies.map((c) => `${c.appeal}★${c.totem ? "🔺" : ""}`).join(" ")}</td>
-        <td class="num muted small">${Number.isFinite(first) ? new Date(first * 1000).toLocaleDateString("fr-FR") : ""}</td>
+        <td class="num muted small">${firstRescue(copies)}</td>
       </tr>`;
     }).join("")}</tbody></table></div>`;
 }
+
+bind.joueur = (id) => {
+  const p = state.players.get(id);
+  if (!p) return;
+  for (const button of main().querySelectorAll("[data-reserve-cards]")) {
+    button.addEventListener("click", () => {
+      state.reserveCards = button.dataset.reserveCards === "1";
+      for (const b of main().querySelectorAll("[data-reserve-cards]")) b.classList.toggle("active", b === button);
+      document.getElementById("reserve-result").innerHTML = reserveView(p);
+    });
+  }
+};
 
 // ---------- Échanges ----------
 
