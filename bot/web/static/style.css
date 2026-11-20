@@ -225,3 +225,5 @@ details .missing { padding: 6px 0 4px 16px; font-size: 0.85rem; }
 .section-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 28px 0 12px; }
 .section-head h2 { margin: 0; }
 .section-head .segmented { margin-left: auto; }
+.missing-species { opacity: 0.45; }
+.animal-card.missing-species > img { filter: grayscale(1); }

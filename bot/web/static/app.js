@@ -13,6 +13,8 @@ const state = {
   animalsFilter: { text: "", rarity: "", collection: "", owned: true, doubles: false },
   animalsCards: false, // "Fiches" view instead of the table
   reserveCards: false, // same switch for a player's reserve
+  reserveMissing: false, // also show the species the player lacks, greyed
+  reserveDoubles: false, // only species the player owns twice or more
   tradesSingles: false,
   me: null, // the signed-in Discord user ({id, name, avatar}), if sign-in is on
 };
@@ -310,6 +312,8 @@ function viewPlayer(id) {
 
     <div class="section-head">
       <h2>Réserve <span class="muted small">${p.species} espèces · ${p.rescues} animaux</span></h2>
+      <label class="check"><input type="checkbox" id="r-missing" ${state.reserveMissing ? "checked" : ""} ${state.reserveDoubles ? "disabled" : ""}> Voir les manquants</label>
+      <label class="check"><input type="checkbox" id="r-doubles" ${state.reserveDoubles ? "checked" : ""}> Doublons seulement</label>
       <div class="segmented" role="group" aria-label="Affichage">
         <button type="button" data-reserve-cards="0" class="${state.reserveCards ? "" : "active"}">Liste</button>
         <button type="button" data-reserve-cards="1" class="${state.reserveCards ? "active" : ""}">Fiches</button>
@@ -384,10 +388,22 @@ function wishlistBlock(p) {
   return lines.length ? lines.join("") : `<span class="muted">Wishlist vide.</span>`;
 }
 
-// Rarest first, best appeal first within a rarity (copies are sorted best first).
+// Rarest first; within a rarity, owned species by best appeal (copies are
+// sorted best first), then the missing ones (no copies) by name. Follows the
+// "manquants" / "doublons" switches.
 function reserveRows(p) {
-  return [...p.bySpecies.entries()].sort(([a, ca], [b, cb]) =>
-    RARITY_RANK[animal(b).rarity] - RARITY_RANK[animal(a).rarity] || cb[0].appeal - ca[0].appeal);
+  let rows = [...p.bySpecies.entries()];
+  if (state.reserveDoubles) {
+    rows = rows.filter(([, copies]) => copies.length >= 2);
+  } else if (state.reserveMissing) {
+    for (const aid of Object.keys(state.data.animals).map(Number)) {
+      if (!p.bySpecies.has(aid)) rows.push([aid, []]);
+    }
+  }
+  return rows.sort(([a, ca], [b, cb]) =>
+    RARITY_RANK[animal(b).rarity] - RARITY_RANK[animal(a).rarity]
+    || (cb[0]?.appeal ?? 0) - (ca[0]?.appeal ?? 0)
+    || animal(a).name.localeCompare(animal(b).name, "fr"));
 }
 
 function firstRescue(copies) {
@@ -396,11 +412,16 @@ function firstRescue(copies) {
 }
 
 function reserveView(p) {
-  if (!p.copies.length) return `<p class="empty card">Aucun animal sauvé.</p>`;
-  if (state.reserveCards) {
-    return `<div class="grid cards">${reserveRows(p).map(([aid, copies]) => reserveCard(aid, copies)).join("")}</div>`;
+  const rows = reserveRows(p);
+  if (!rows.length) {
+    return `<p class="empty card">${state.reserveDoubles ? "Aucun animal en double." : "Aucun animal sauvé."}</p>`;
   }
-  return reserveTable(p);
+  const missing = rows.filter(([, copies]) => !copies.length).length;
+  const count = `<p class="muted small">${rows.length - missing} espèce(s)${missing ? ` possédée(s), ${missing} manquante(s) en grisé` : ""}.</p>`;
+  if (state.reserveCards) {
+    return `${count}<div class="grid cards">${rows.map(([aid, copies]) => reserveCard(aid, copies)).join("")}</div>`;
+  }
+  return count + reserveTable(rows);
 }
 
 // One card per species the player owns: photo, rarity, collections, their copies.
@@ -408,30 +429,29 @@ function reserveCard(aid, copies) {
   const a = animal(aid);
   const milestone = a.milestone != null ? state.data.milestones[a.milestone] : null;
   const date = firstRescue(copies);
-  return `<div class="card animal-card">
+  return `<div class="card animal-card${copies.length ? "" : " missing-species"}">
     ${a.image ? `<img src="${esc(a.image)}" alt="${esc(a.name)}" loading="lazy">` : `<div class="no-image">Pas de photo</div>`}
     <div class="body">
       <div class="name">${copies.some((c) => c.totem) ? "🔺 " : ""}${milestone ? `${milestone.badge} ` : ""}${animalName(aid, { dot: false })}${copies.length > 1 ? ` <b>×${copies.length}</b>` : ""}</div>
       <div class="small muted"><i>${esc(a.sci)}</i></div>
       <div class="small"><span class="rarity ${a.rarity}">${esc(rarityLabel(a.rarity))}</span>${a.iucn ? ` · <span class="muted">${esc(IUCN_LABEL[a.iucn] || a.iucn)} (${esc(a.iucn)})</span>` : ""}</div>
       ${a.collections.length ? `<div style="margin-top:6px">${collectionChips(aid)}</div>` : ""}
-      <div class="small" style="margin-top:8px">${copies.map((c) => `<div>${stars(c.appeal)} <span class="muted">· ${a.income[c.appeal - 1]} baies/h${c.totem ? " · 🔺 totem" : ""}</span></div>`).join("")}</div>
+      <div class="small" style="margin-top:8px">${copies.length ? "" : '<span class="muted">Pas encore sauvé</span>'}${copies.map((c) => `<div>${stars(c.appeal)} <span class="muted">· ${a.income[c.appeal - 1]} baies/h${c.totem ? " · 🔺 totem" : ""}</span></div>`).join("")}</div>
       ${date ? `<div class="small muted" style="margin-top:4px">Depuis le ${date}</div>` : ""}
     </div>
   </div>`;
 }
 
-function reserveTable(p) {
-  const rows = reserveRows(p);
+function reserveTable(rows) {
   return `<div class="table-wrap"><table>
     <thead><tr><th>Animal</th><th>Rareté</th><th>Collections</th><th>Auras</th><th class="num">Depuis</th></tr></thead>
     <tbody>${rows.map(([aid, copies]) => {
       const a = animal(aid);
-      return `<tr>
+      return `<tr${copies.length ? "" : ' class="missing-species"'}>
         <td>${copies.some((c) => c.totem) ? "🔺 " : ""}${animalName(aid)}${copies.length > 1 ? ` <b>×${copies.length}</b>` : ""}</td>
         <td><span class="rarity ${a.rarity}">${esc(rarityLabel(a.rarity))}</span></td>
         <td>${collectionChips(aid) || '<span class="muted">—</span>'}</td>
-        <td>${copies.map((c) => `${c.appeal}★${c.totem ? "🔺" : ""}`).join(" ")}</td>
+        <td>${copies.map((c) => `${c.appeal}★${c.totem ? "🔺" : ""}`).join(" ") || '<span class="muted">manquant</span>'}</td>
         <td class="num muted small">${firstRescue(copies)}</td>
       </tr>`;
     }).join("")}</tbody></table></div>`;
@@ -440,11 +460,19 @@ function reserveTable(p) {
 bind.joueur = (id) => {
   const p = state.players.get(id);
   if (!p) return;
+  const refresh = () => { document.getElementById("reserve-result").innerHTML = reserveView(p); };
+  const missingBox = document.getElementById("r-missing");
+  missingBox.addEventListener("change", () => { state.reserveMissing = missingBox.checked; refresh(); });
+  document.getElementById("r-doubles").addEventListener("change", (e) => {
+    state.reserveDoubles = e.target.checked;
+    missingBox.disabled = state.reserveDoubles; // doubles are owned by definition
+    refresh();
+  });
   for (const button of main().querySelectorAll("[data-reserve-cards]")) {
     button.addEventListener("click", () => {
       state.reserveCards = button.dataset.reserveCards === "1";
       for (const b of main().querySelectorAll("[data-reserve-cards]")) b.classList.toggle("active", b === button);
-      document.getElementById("reserve-result").innerHTML = reserveView(p);
+      refresh();
     });
   }
 };
