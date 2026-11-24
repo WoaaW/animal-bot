@@ -855,6 +855,53 @@ class Rolls(commands.Cog):
             return
         await self.send_animal_list(ctx, rarity, collection, member=member)
 
+    @commands.hybrid_command(
+        name="missing",
+        description="Les animaux qu'il te manque, dans une rareté, une collection ou un milestone.",
+    )
+    @app_commands.describe(
+        rarity="N'afficher qu'une rareté",
+        group="N'afficher qu'une collection ou un milestone",
+        member="Voir ce qu'il manque à ce joueur plutôt qu'à toi",
+    )
+    @app_commands.choices(rarity=[app_commands.Choice(name=RARITY_LABEL[t].capitalize(), value=t) for t in RARITY_ODDS])
+    async def missing(
+        self,
+        ctx: commands.Context,
+        rarity: str | None = None,
+        member: discord.Member | None = None,
+        *,
+        group: str | None = None,
+    ):
+        if ctx.guild is None:
+            await ctx.send("Utilise cette commande dans un serveur.")
+            return
+        if ctx.interaction is None:
+            # "!missing @Bob rare félidés": parsed like !animals.
+            text = " ".join(filter(None, [rarity, group]))
+            if member is None and ctx.message.mentions:
+                member = ctx.message.mentions[0]
+            text = re.sub(r"<@!?\d+>", "", text).strip()
+            rarity, group = _parse_animals_filter(text)
+        elif rarity is not None and rarity not in RARITY_ODDS:
+            rarity = ""
+        if rarity == "":
+            labels = ", ".join(RARITY_LABEL.values())
+            await ctx.send(f"Rareté inconnue. Choisis parmi : {labels}.")
+            return
+        collection = None
+        if group:
+            collection = find_group(group)
+            if collection is None:
+                await ctx.send(f"Aucune collection ni aucun milestone ne s'appelle « {group} ».")
+                return
+        # Who owns each missing animal stays on the lines: who to trade with.
+        await self.send_animal_list(ctx, rarity, collection, member=member or ctx.author, missing=True)
+
+    @missing.autocomplete("group")
+    async def missing_group_autocomplete(self, interaction: discord.Interaction, current: str):
+        return group_choices(current)
+
     async def send_animal_list(
         self,
         ctx: commands.Context,
@@ -862,11 +909,13 @@ class Rolls(commands.Cog):
         collection: Collection | milestones.Milestone | None,
         *,
         member: discord.abc.User | None = None,
+        missing: bool = False,
         content: str | None = None,
     ) -> None:
         """The /animals list (and its cards), filtered by rarity, collection
         (or milestone group: both have a label and `includes`) and/or the
-        player who rescued them. Shared with /collections <groupe> and
+        player who rescued them (or, with `missing`, those `member` lacks:
+        /missing). Shared with /collections <groupe> and
         /milestones <groupe>; `content` goes above."""
         # The caller may have deferred already, and deferring twice raises.
         if ctx.interaction is None or not ctx.interaction.response.is_done():
@@ -891,7 +940,7 @@ class Rolls(commands.Cog):
                 for animal_id, user_id in rescues.all():
                     owners.setdefault(animal_id, []).append(user_id)
         if member is not None:
-            animals = [a for a in animals if member.id in owners.get(a.id, [])]
+            animals = [a for a in animals if (member.id in owners.get(a.id, [])) != missing]
 
         # Most common first, names A→Z within a rarity.
         animals.sort(key=lambda a: (-RARITY_ORDER[a.rarity], _fold(a.name)))
@@ -908,12 +957,16 @@ class Rolls(commands.Cog):
         if rarity is not None:
             title += f" {RARITY_LABEL[rarity]}s" if collection is None else f" · {RARITY_LABEL[rarity]}s"
         title += f" ({len(animals)})"
-        if member is not None:
+        if member is not None and missing:
+            title = f"Il manque à {member.display_name} · {title}"
+        elif member is not None:
             title += f" · sauvés par {member.display_name}"
         elif ctx.guild is not None:
             title += f" · {sum(a.id in owners for a in animals)} sauvés ici"
         color = RARITY_COLOR[rarity] if rarity else discord.Color.green()
         if not animals:
+            if missing:
+                lines = ["Rien ne manque ici, bravo ! 🎉"]
             await send_pages(ctx, paginate(title, lines, color), content=content)
             return
 
