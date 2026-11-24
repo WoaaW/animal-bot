@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from ..db import SessionLocal
 from ..economy import CURRENCY_NAME, animal_score, completed_milestones, get_reserve_status, milestone_bonus, reserve_income
@@ -10,6 +10,7 @@ from ..models import Animal, Rescue
 from ..species_collections import COLLECTIONS, completed, rescued_species
 from .totems import _income, _rescues
 from .rolls import MENU_COLOR, animal_embed, animal_header, format_appeal, format_rate, format_reserve_bonus, reserve_pages
+from .milestones import Milestones
 from .species_collections import Collections
 
 
@@ -31,7 +32,7 @@ def _animal_page(row: tuple[Rescue, Animal], number: int, total: int) -> discord
 
 class ProfileView(discord.ui.View):
     """Under the fixed summary, one tab per part of the profile (totems,
-    reserve, collections), each with its own pages and ◀️▶️ when it has
+    reserve, milestones, collections), each with its own pages and ◀️▶️ when it has
     several. Only the invoker clicks, since the message is public."""
 
     def __init__(self, summary: discord.Embed, tabs: dict[str, list[discord.Embed]], owner_id: int):
@@ -106,7 +107,7 @@ class Profile(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="profile", description="Affiche le profil d'un joueur : badges, totems, réserve et collections.")
+    @commands.hybrid_command(name="profile", description="Affiche le profil d'un joueur : badges, totems, réserve, milestones et collections.")
     @app_commands.describe(member="Le joueur à afficher (toi par défaut)")
     @app_commands.guild_only()
     async def profile(self, ctx: commands.Context, member: discord.Member | None = None):
@@ -120,7 +121,8 @@ class Profile(commands.Cog):
             reached = await completed_milestones(session, ctx.guild.id, target.id)
             reserve = await get_reserve_status(session, ctx.guild.id, target.id)
             species = await rescued_species(session, ctx.guild.id, target.id)
-            pool_size = await session.scalar(select(func.count()).select_from(Animal))
+            pool = (await session.execute(select(Animal))).scalars().all()
+        pool_size = len(pool)
         owned = await _rescues(ctx.guild.id, target.id)
         score = sum(animal_score(animal.rarity, rescue.appeal) for rescue, animal in owned)
         rows = [row for row in owned if row[0].in_reserve]
@@ -149,6 +151,7 @@ class Profile(commands.Cog):
         tabs = {
             "Totems": totems or [_empty("Aucun totem pour l'instant.")],
             "Réserve": animals if owned else [_empty("Aucun animal sauvé pour l'instant.")],
+            "Milestones": [Milestones._overview(target, species, pool)],
             "Collections": [Collections._overview(target, species)],
         }
         view = ProfileView(summary, tabs, ctx.author.id)
