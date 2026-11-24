@@ -20,7 +20,7 @@ from ..economy import (
     upgrade_maxed,
     upgrade_price,
 )
-from .rolls import MENU_COLOR, RARITY_LABEL, RARITY_UNLOCK_LEVEL, format_rate, format_reserve_bonus, format_wait, rarity_odds
+from .rolls import MAX_MULTI_ROLLS, MENU_COLOR, RARITY_LABEL, RARITY_UNLOCK_LEVEL, format_rate, format_reserve_bonus, format_wait, rarity_odds
 
 # The top tier stays a surprise until a player unlocks it.
 HIDDEN_TIER = "mythic"
@@ -53,6 +53,7 @@ def _level(status: PlayerStatus, upgrade: str) -> int:
         "reserve": status.reserve_slots,
         "appeal": status.appeal_level,
         "special": status.special_roll,
+        "multi": status.multi_roll,
     }[upgrade]
 
 
@@ -147,6 +148,11 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
          else f"{special} → **{special + 1}** roll{'s' if special else ''} spécia{'ux' if special else 'l'} par jour")
         + " parmi les animaux du milestone de ton choix (`/rescue <groupe>`), en plus de tes rolls habituels.",
     )
+    fields["multi"] = (
+        f"🟤 Roll multiple — {_cost(status, 'multi')}",
+        f"{'Débloqué' if status.multi_roll else 'Débloque'} `/rc <nombre>` : jusqu'à {MAX_MULTI_ROLLS} rolls d'un coup, "
+        "listés dans un seul message avec un bouton par animal.",
+    )
     for upgrade in visible_upgrades(status):
         name, value = fields[upgrade]
         embed.add_field(name=name, value=f"{_progress(status, upgrade)}\n{value}", inline=False)
@@ -181,8 +187,9 @@ class ShopView(discord.ui.View):
             "reserve": self.reserve,
             "appeal": self.appeal,
             "special": self.special,
+            "multi": self.multi,
         }
-        # A sixth button: discord.py puts it on a second row by itself.
+        # Past five buttons, discord.py starts a second row.
         self.clear_items()
         for upgrade in visible_upgrades(self.status):
             button = buttons[upgrade]
@@ -239,6 +246,10 @@ class ShopView(discord.ui.View):
     @discord.ui.button(emoji="🟠", label="Roll spécial", style=discord.ButtonStyle.primary)
     async def special(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._buy(interaction, "special")
+
+    @discord.ui.button(emoji="🟤", label="Roll multiple", style=discord.ButtonStyle.primary)
+    async def multi(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._buy(interaction, "multi")
 
     async def on_timeout(self) -> None:
         for item in self.children:

@@ -85,6 +85,7 @@ UPGRADES = {
     "claims": (PlayerState.claim_slots, 2000, 1.5, 6 - BASE_CLAIMS),  # +1 claim that can be stored, up to 6
     "appeal": (PlayerState.appeal_level, 4000, 1.2, None),           # see appeal_odds; uncapped, so a flat curve
     "special": (PlayerState.special_roll, (10000, 50000, 150000), None, 3),  # special rolls per day (/rescue <groupe>); explicit prices
+    "multi": (PlayerState.multi_roll, (50000,), None, 1),  # unlocks /rescue <n>, several rolls at once
 }
 
 
@@ -171,6 +172,7 @@ class PlayerStatus:
     prestige_level: int
     special_roll: int  # special rolls per day (shop level)
     special_rolls_left: int  # today
+    multi_roll: int  # 1 once /rescue <n> is unlocked
 
 
 def _current_period() -> int:
@@ -231,6 +233,7 @@ def _status(state: PlayerState) -> PlayerStatus:
         special_roll=state.special_roll,
         special_rolls_left=state.special_roll
         - (state.special_rolls_used if state.special_roll_period == _current_special_period() else 0),
+        multi_roll=state.multi_roll,
     )
 
 
@@ -387,7 +390,7 @@ async def get_status(session: AsyncSession, guild_id: int, user_id: int) -> Play
         guild_id=guild_id, user_id=user_id, points=0, peak_points=0, rolls_used=0, rolls_period=0,
         claims_anchor=0, bonus_rolls=0, bonus_claims=0, extra_rolls=0, luck_level=0, claim_slots=0,
         reserve_slots=0, appeal_level=0, trades_used=0, trades_period=0, prestige_level=0,
-        special_roll=0, special_roll_period=0, special_rolls_used=0,
+        special_roll=0, special_roll_period=0, special_rolls_used=0, multi_roll=0,
     ))
 
 

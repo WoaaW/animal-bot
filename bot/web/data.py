@@ -43,6 +43,7 @@ UPGRADE_LABEL = {
     "claims": "Stock de claims",
     "appeal": "Aura",
     "special": "Rolls spéciaux",
+    "multi": "Roll multiple",
 }
 
 

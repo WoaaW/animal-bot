@@ -153,3 +153,5 @@ class PlayerState(Base):
     # no counter already used it if special_roll_period is today. Elsewhere the
     # count is ignored, since the period isn't today.
     special_rolls_used: Mapped[int] = mapped_column(default=0, server_default="1")
+    # Multi-roll (/rescue <n>), a one-level shop unlock: 1 once bought.
+    multi_roll: Mapped[int] = mapped_column(default=0, server_default="0")

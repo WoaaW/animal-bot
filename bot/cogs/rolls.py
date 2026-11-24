@@ -27,6 +27,7 @@ from ..economy import (
     consume_special_roll,
     get_status,
     milestone_points,
+    upgrade_price,
     reserve_income,
     roll_appeal,
     seconds_until_reset,
@@ -100,8 +101,8 @@ IUCN_LABEL = {
 ROLL_TIMEOUT_SECONDS = 120
 ROLL_PROTECTION_SECONDS = 60
 assert ROLL_PROTECTION_SECONDS < ROLL_TIMEOUT_SECONDS, "others must get a chance to rescue"
-# Rolls at most in one /rescue <n>: one button each, 5 per row.
-MAX_MULTI_ROLLS = 10
+# Rolls at most in one /rescue <n> (a shop unlock): one button each, on one row.
+MAX_MULTI_ROLLS = 5
 
 EMBED_DESCRIPTION_LIMIT = 4096
 # Split after . ! ? when the next sentence starts with a capital or a quote,
@@ -779,6 +780,14 @@ class Rolls(commands.Cog):
                 await ctx.send(f"Tu peux faire entre 1 et {MAX_MULTI_ROLLS} rolls d'un coup.")
                 return
         count = count or 1
+        if count > 1 and ctx.guild is not None:
+            async with SessionLocal() as session:
+                unlocked = (await get_status(session, ctx.guild.id, ctx.author.id)).multi_roll
+            if not unlocked:
+                await ctx.send(
+                    f"Le roll multiple se débloque dans le `/shop` ({upgrade_price('multi', 0)} {CURRENCY_NAME})."
+                )
+                return
         if group is None or ctx.invoked_with == "rc":
             await self._roll(ctx, count=count)
             return

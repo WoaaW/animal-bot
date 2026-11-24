@@ -56,8 +56,7 @@ def _pages() -> list[discord.Embed]:
             "2) Les rolls",
             f"`/rescue` (ou `/rc`) tire un animal au hasard. Tu as **{BASE_ROLLS} rolls**, rechargés "
             f"{_every(ROLL_RESET_SECONDS)}, au même moment pour tout le monde.\n"
-            f"`/rc 5` en fait plusieurs d'un coup (jusqu'à {MAX_MULTI_ROLLS}) : tu vois la liste, et chaque "
-            "bouton numéroté affiche l'animal avec son bouton pour le sauver.\n\n"
+            "\n"
             "La rareté suit le **statut de conservation UICN** de l'espèce : plus elle est menacée dans la nature, "
             f"plus elle est rare. Chaque roll te rapporte des {CURRENCY_NAME}, même si tu ne sauves pas l'animal :\n"
             f"{rarities}\n \n"
@@ -93,7 +92,9 @@ def _pages() -> list[discord.Embed]:
             "· 🔷 **Rolls** : plus de rolls par heure.\n"
             "· 🔺 **Place de totem** : un totem de plus.\n"
             "· 🟨 **Stock de claims** : garde plus de claims d'avance.\n"
-            "· 🟣 **Aura** : de meilleures auras sur tes rolls.\n\n"
+            "· 🟣 **Aura** : de meilleures auras sur tes rolls.\n"
+            f"· 🟤 **Roll multiple** : `/rc {MAX_MULTI_ROLLS}` fait jusqu'à {MAX_MULTI_ROLLS} rolls d'un coup, "
+            "chaque bouton numéroté affiche l'animal pour le sauver.\n\n"
             "Certaines améliorations n'apparaissent qu'une fois que tu as assez de "
             f"{CURRENCY_NAME} pour les acheter. `/balance` résume tes {CURRENCY_NAME}, rolls et claims.",
         ),
