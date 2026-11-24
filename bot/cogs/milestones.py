@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from ..db import SessionLocal
 from ..economy import CURRENCY_NAME, MILESTONE_POINTS_BONUS
-from ..milestones import MILESTONES, progress
+from ..milestones import MILESTONES, Milestone, progress
 from ..models import Animal
 from ..species_collections import rescued_species
 from .rolls import MENU_COLOR, _fold
@@ -41,17 +41,20 @@ class Milestones(commands.Cog):
                 await ctx.send(f"Aucun milestone ne s'appelle « {group} ».")
                 return
         await ctx.defer()
-
+        if milestone is not None:
+            await self.send_group(ctx, milestone)
+            return
         async with SessionLocal() as session:
             species = await rescued_species(session, ctx.guild.id, ctx.author.id)
             animals = (await session.execute(select(Animal))).scalars().all()
+        await ctx.send(embed=self._overview(ctx.author, species, animals))
 
-        if milestone is None:
-            await ctx.send(embed=self._overview(ctx.author, species, animals))
-            return
-
-        # Same list and cards as /animals and /collections <groupe>, with the
-        # player's progress above.
+    async def send_group(self, ctx: commands.Context, milestone: Milestone) -> None:
+        """Same list and cards as /animals and /collections <groupe>, with the
+        player's progress above. Also what /collections <milestone> shows."""
+        async with SessionLocal() as session:
+            species = await rescued_species(session, ctx.guild.id, ctx.author.id)
+            animals = (await session.execute(select(Animal))).scalars().all()
         total = sum(milestone.includes(a) for a in animals)
         content = f"{milestone.badge} **{milestone.label}** {_bar(progress(species, milestone), total)}"
         await self.bot.get_cog("Rolls").send_animal_list(ctx, None, milestone, content=content)

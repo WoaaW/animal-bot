@@ -5,7 +5,8 @@ from discord.ext import commands
 from ..species_collections import COLLECTION_TARGET, COLLECTIONS, DIFFICULTY, progress, rescued_species, total_bonus
 from ..db import SessionLocal
 from ..models import Animal
-from .rolls import MENU_COLOR, _fold
+from ..milestones import Milestone
+from .rolls import MENU_COLOR, find_group, group_choices
 
 
 def _bar(count: int) -> str:
@@ -24,19 +25,22 @@ class Collections(commands.Cog):
         name="collections",
         description="Tes collections : réunis des familles d'animaux pour augmenter le revenu de tes totems.",
     )
-    @app_commands.describe(group="Voir les espèces d'un groupe")
+    @app_commands.describe(group="Voir les espèces d'une collection ou d'un milestone")
     async def collections(self, ctx: commands.Context, *, group: str | None = None):
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.")
             return
         collection = None
         if group is not None:
-            needle = _fold(group)
-            collection = next((a for a in COLLECTIONS if _fold(a.label) == needle), None)
+            collection = find_group(group)
             if collection is None:
-                await ctx.send(f"Aucune collection ne s'appelle « {group} ».")
+                await ctx.send(f"Aucune collection ni aucun milestone ne s'appelle « {group} ».")
                 return
         await ctx.defer()
+        if isinstance(collection, Milestone):
+            # A milestone: the same page as /milestones <groupe>.
+            await self.bot.get_cog("Milestones").send_group(ctx, collection)
+            return
         async with SessionLocal() as session:
             species = await rescued_species(session, ctx.guild.id, ctx.author.id)
         if collection is None:
@@ -77,12 +81,7 @@ class Collections(commands.Cog):
 
     @collections.autocomplete("group")
     async def group_autocomplete(self, interaction: discord.Interaction, current: str):
-        needle = _fold(current)
-        return [
-            app_commands.Choice(name=a.label, value=a.label)
-            for a in COLLECTIONS
-            if needle in _fold(a.label)
-        ][:25]
+        return group_choices(current)
 
 
 async def setup(bot: commands.Bot):

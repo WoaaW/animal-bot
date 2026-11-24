@@ -363,8 +363,10 @@ class RescueView(discord.ui.View):
 
 
 PAGE_SIZE = 20
-# Rescuers named per animal in /animals; the rest are just counted.
-MAX_RESCUERS_SHOWN = 3
+# Embed descriptions cap at 4096 chars; a page also ends before this many.
+PAGE_CHARS = 4000
+# Embed field values cap at 1024 chars.
+FIELD_CHARS = 1024
 # Copies of one animal whose appeal /reserve lists; the rest are just counted.
 MAX_COPIES_SHOWN = 5
 # Rarest first in listings.
@@ -372,9 +374,50 @@ RARITY_ORDER = {tier: i for i, tier in enumerate(reversed(RARITY_ODDS))}
 
 
 def paginate(title: str, lines: list[str], color: discord.Color) -> list[discord.Embed]:
-    # Embed descriptions cap at 4096 chars, so long lists need pages.
-    chunks = [lines[i : i + PAGE_SIZE] for i in range(0, len(lines), PAGE_SIZE)] or [[]]
+    # PAGE_SIZE lines a page, fewer when long lines (an animal with many
+    # rescuers) would pass the 4096-char cap of an embed description.
+    chunks: list[list[str]] = [[]]
+    size = 0
+    for line in lines:
+        if chunks[-1] and (len(chunks[-1]) >= PAGE_SIZE or size + len(line) + 1 > PAGE_CHARS):
+            chunks.append([])
+            size = 0
+        chunks[-1].append(line)
+        size += len(line) + 1
     return _pages(title, chunks, color)
+
+
+def find_group(text: str) -> "Collection | milestones.Milestone | None":
+    """The collection or milestone named `text` (accent- and case-insensitive)."""
+    needle = _fold(text)
+    return next((g for g in [*COLLECTIONS, *milestones.MILESTONES] if _fold(g.label) == needle), None)
+
+
+def group_choices(current: str) -> list[app_commands.Choice[str]]:
+    """Autocomplete over collections then milestones (badge before the latter)."""
+    needle = _fold(current)
+    choices = [app_commands.Choice(name=c.label, value=c.label) for c in COLLECTIONS if needle in _fold(c.label)]
+    choices += [
+        app_commands.Choice(name=f"{m.badge} {m.label} (milestone)", value=m.label)
+        for m in milestones.MILESTONES
+        if needle in _fold(m.label)
+    ]
+    # Discord caps autocomplete at 25 choices: keep milestones in when typing nothing.
+    if len(choices) > 25:
+        choices = choices[: 25 - len(milestones.MILESTONES)] + choices[-len(milestones.MILESTONES):]
+    return choices
+
+
+def _field_chunks(names: list[str]) -> list[str]:
+    """Comma-joined names split into embed-field-sized values."""
+    chunks = [""]
+    for name in names:
+        piece = name if not chunks[-1] else f", {name}"
+        if len(chunks[-1]) + len(piece) > FIELD_CHARS:
+            chunks.append(name)
+        else:
+            chunks[-1] += piece
+    return chunks
 
 
 def paginate_sections(title: str, sections: list[tuple[str, list[str]]], color: discord.Color) -> list[discord.Embed]:
@@ -775,7 +818,7 @@ class Rolls(commands.Cog):
     @app_commands.describe(
         rarity="N'afficher qu'une rareté",
         member="N'afficher que les animaux sauvés par ce joueur",
-        group="N'afficher qu'une collection",
+        group="N'afficher qu'une collection ou un milestone",
     )
     @app_commands.choices(rarity=[app_commands.Choice(name=RARITY_LABEL[t].capitalize(), value=t) for t in RARITY_ODDS])
     async def animals(
@@ -803,10 +846,9 @@ class Rolls(commands.Cog):
             return
         collection = None
         if group:
-            needle = _fold(group)
-            collection = next((a for a in COLLECTIONS if _fold(a.label) == needle), None)
+            collection = find_group(group)
             if collection is None:
-                await ctx.send(f"Aucun groupe ne s'appelle « {group} ».")
+                await ctx.send(f"Aucune collection ni aucun milestone ne s'appelle « {group} ».")
                 return
         if member is not None and ctx.guild is None:
             await ctx.send("Le filtre par joueur ne marche que dans un serveur.")
@@ -858,11 +900,8 @@ class Rolls(commands.Cog):
             line = f"**{a.name}** — *{a.scientific_name}* ({RARITY_LABEL[a.rarity]})"
             if a.id in owners:
                 # Mentions inside embeds render as names but never ping.
-                # Capped so a popular animal can't blow up the page length.
-                rescuers = owners[a.id]
-                line += " · 🏠 " + ", ".join(f"<@{u}>" for u in rescuers[:MAX_RESCUERS_SHOWN])
-                if len(rescuers) > MAX_RESCUERS_SHOWN:
-                    line += f" +{len(rescuers) - MAX_RESCUERS_SHOWN}"
+                # Everyone is listed; paginate shortens pages with long lines.
+                line += " · 🏠 " + ", ".join(f"<@{u}>" for u in owners[a.id])
             lines.append(line)
 
         title = collection.label if collection else "Animaux"
@@ -888,10 +927,8 @@ class Rolls(commands.Cog):
             add_collections_field(card, a, species)
             rescuers = owners.get(a.id)
             if rescuers:
-                names = ", ".join(f"<@{u}>" for u in rescuers[:MAX_RESCUERS_SHOWN])
-                if len(rescuers) > MAX_RESCUERS_SHOWN:
-                    names += f" +{len(rescuers) - MAX_RESCUERS_SHOWN}"
-                card.add_field(name="🏠 Sauvé par", value=names, inline=False)
+                for i, names in enumerate(_field_chunks([f"<@{u}>" for u in rescuers])):
+                    card.add_field(name="🏠 Sauvé par" + (" (suite)" if i else ""), value=names, inline=False)
             footer = f"Fiche {number}/{len(animals)}"
             if a.wiki_url:
                 footer += " · Source : Wikipédia"
@@ -903,8 +940,7 @@ class Rolls(commands.Cog):
 
     @animals.autocomplete("group")
     async def animals_group_autocomplete(self, interaction: discord.Interaction, current: str):
-        needle = _fold(current)
-        return [app_commands.Choice(name=a.label, value=a.label) for a in COLLECTIONS if needle in _fold(a.label)][:25]
+        return group_choices(current)
 
     @commands.hybrid_command(name="info", description="Affiche la description Wikipédia complète d'un animal.")
     @app_commands.describe(animal="L'animal à rechercher")
