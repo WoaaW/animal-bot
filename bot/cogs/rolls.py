@@ -2,6 +2,7 @@ import random
 import re
 import time
 import unicodedata
+from dataclasses import dataclass, field
 from datetime import timezone
 
 import discord
@@ -99,6 +100,8 @@ IUCN_LABEL = {
 ROLL_TIMEOUT_SECONDS = 120
 ROLL_PROTECTION_SECONDS = 60
 assert ROLL_PROTECTION_SECONDS < ROLL_TIMEOUT_SECONDS, "others must get a chance to rescue"
+# Rolls at most in one /rescue <n>: one button each, 5 per row.
+MAX_MULTI_ROLLS = 10
 
 EMBED_DESCRIPTION_LIMIT = 4096
 # Split after . ! ? when the next sentence starts with a capital or a quote,
@@ -255,14 +258,17 @@ class RescueView(discord.ui.View):
     someone's reserve (or the clicker's own), but only once per roll, and
     only by the roller during the first ROLL_PROTECTION_SECONDS."""
 
-    def __init__(self, animal: Animal, guild_id: int, appeal: int, roller_id: int):
+    def __init__(
+        self, animal: Animal, guild_id: int, appeal: int, roller_id: int, *, protected: bool = True
+    ):
         super().__init__(timeout=ROLL_TIMEOUT_SECONDS)
         self.animal = animal
         self.guild_id = guild_id
         self.appeal = appeal
         self.roller_id = roller_id
-        # Until then, only the roller can rescue.
-        self.protected_until = int(time.time()) + ROLL_PROTECTION_SECONDS
+        # Until then, only the roller can rescue. A card opened by someone else
+        # from a multi-roll is already past the roller's protection.
+        self.protected_until = int(time.time()) + (ROLL_PROTECTION_SECONDS if protected else 0)
         self.message: discord.Message | None = None
         self.rescued = False
 
@@ -355,6 +361,159 @@ class RescueView(discord.ui.View):
             item.disabled = True
         # Without this edit the buttons still look clickable after the view
         # dies, and clicks fail with "This interaction failed".
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+
+@dataclass
+class RolledAnimal:
+    """One animal of a roll, with what its card and wish pings need."""
+
+    animal: Animal
+    appeal: int
+    points: int
+    owned: list[int] = field(default_factory=list)  # the roller's copies' appeal, best first
+    wishers: list[int] = field(default_factory=list)
+    collection_wishers: dict[int, list[str]] = field(default_factory=dict)
+
+
+def roll_embed(roll: RolledAnimal, species: list[Animal]) -> discord.Embed:
+    """A roll's card: short description, photo, aura, collections, copies."""
+    animal = roll.animal
+    embed = animal_embed(animal, full=False)
+    milestone = milestones.milestone_of(animal)
+    if milestone is not None:
+        embed.title = f"{milestone.badge} {embed.title}"
+    embed.add_field(
+        name="Aura",
+        value=f"{format_appeal(roll.appeal)} · {reserve_income(animal.rarity, roll.appeal)} {CURRENCY_NAME}/h comme animal-totem",
+        inline=False,
+    )
+    # The collection groups this animal counts for, with the roller's
+    # progress in each (✓ once complete).
+    add_collections_field(embed, animal, species)
+    if roll.owned:
+        copies = "\n".join(format_appeal(a) for a in roll.owned[:MAX_COPIES_SHOWN])
+        if len(roll.owned) > MAX_COPIES_SHOWN:
+            copies += f"\n+{len(roll.owned) - MAX_COPIES_SHOWN} autres"
+        embed.add_field(name=f"Déjà dans ta réserve (×{len(roll.owned)})", value=copies, inline=False)
+    return embed
+
+
+def _wish_lines(roll: RolledAnimal, roller_id: int, protected_until: int) -> tuple[list[str], list[int]]:
+    """The lines above a roll about wishes, and the players to ping. Players
+    who wished for this animal (/wish add), or for a collection it's missing
+    from (/wish add Collection : …), get pinged, except the roller, who's
+    already looking at it. A player on both lists is pinged once."""
+    others = [u for u in roll.wishers if u != roller_id]
+    collectors = [u for u in roll.collection_wishers if u != roller_id and u not in roll.wishers]
+    lines = []
+    if others:
+        lines.append(f"⭐ {roll.animal.name} souhaité par {' '.join(f'<@{u}>' for u in others)}")
+    if collectors:
+        lines.append(
+            f"{roll.animal.name} manque à la collection de "
+            + ", ".join(f"<@{u}> ({', '.join(roll.collection_wishers[u])})" for u in collectors)
+        )
+    if lines and protected_until > time.time():
+        lines[0] += f" · sauvetage possible <t:{protected_until}:R>"
+    if roller_id in roll.collection_wishers:
+        lines.insert(0, f"{roll.animal.name} : nouveau pour ta collection {', '.join(roll.collection_wishers[roller_id])} !")
+    if roller_id in roll.wishers:
+        lines.insert(0, f"⭐ {roll.animal.name} est dans ta wishlist !")
+    return lines, [*others, *collectors]
+
+
+def multi_roll_embed(rolled: list[RolledAnimal], roller: discord.abc.User) -> discord.Embed:
+    """The list of a multi-roll, numbered like its buttons."""
+    lines = []
+    for index, roll in enumerate(rolled, 1):
+        milestone = milestones.milestone_of(roll.animal)
+        badge = f"{milestone.badge} " if milestone else ""
+        line = (
+            f"**{index}.** {badge}**{roll.animal.name}** · {rarity_initials(roll.animal.rarity)}"
+            f" · {format_appeal(roll.appeal)}"
+        )
+        if roll.owned:
+            line += f" · déjà ×{len(roll.owned)}"
+        else:
+            line += " · 🆕"
+        if roller.id in roll.wishers:
+            line += " · ⭐"
+        lines.append(line)
+    rarest = max(rolled, key=lambda r: list(RARITY_ODDS).index(r.animal.rarity)).animal.rarity
+    embed = discord.Embed(
+        title=f"{len(rolled)} rolls de {roller.display_name}",
+        description="\n".join(lines),
+        color=RARITY_COLOR[rarest],
+    )
+    embed.set_footer(text="Clique sur un numéro pour voir l'animal et le sauver.")
+    return embed
+
+
+class MultiRollView(discord.ui.View):
+    """Numbered buttons under a multi-roll: each posts that animal's regular
+    roll card (photo, details, Sauver button), once. During the first
+    ROLL_PROTECTION_SECONDS only the roller can open them, like a rescue."""
+
+    def __init__(self, rolled: list[RolledAnimal], species: list[Animal], guild_id: int, roller: discord.abc.User):
+        super().__init__(timeout=ROLL_TIMEOUT_SECONDS)
+        self.rolled = rolled
+        self.species = species
+        self.guild_id = guild_id
+        self.roller = roller
+        self.protected_until = int(time.time()) + ROLL_PROTECTION_SECONDS
+        self.message: discord.Message | None = None
+        for index, roll in enumerate(rolled):
+            button = discord.ui.Button(
+                label=f"{index + 1}. {roll.animal.name}"[:80],
+                style=discord.ButtonStyle.primary,
+                row=index // 5,
+            )
+            button.callback = self._opener(index, button)
+            self.add_item(button)
+
+    def _opener(self, index: int, button: discord.ui.Button):
+        async def callback(interaction: discord.Interaction):
+            is_roller = interaction.user.id == self.roller.id
+            if not is_roller and time.time() < self.protected_until:
+                await interaction.response.send_message(
+                    f"Ces animaux sont réservés à {self.roller.mention} pour l'instant. "
+                    f"Tu pourras les voir <t:{self.protected_until}:R>.",
+                    ephemeral=True,
+                )
+                return
+            # Disabled before any await: one card per animal, so one rescue.
+            if button.disabled:
+                await interaction.response.send_message("Cet animal est déjà affiché !", ephemeral=True)
+                return
+            button.disabled = True
+            button.style = discord.ButtonStyle.secondary
+            roll = self.rolled[index]
+            view = RescueView(roll.animal, self.guild_id, roll.appeal, self.roller.id, protected=is_roller)
+            lines, _ = _wish_lines(roll, self.roller.id, view.protected_until)
+            lines.append(f"-# Roll {index + 1}/{len(self.rolled)} de {self.roller.mention}")
+            await interaction.response.send_message(
+                "\n".join(lines),
+                embed=roll_embed(roll, self.species),
+                view=view,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            view.message = await interaction.original_response()
+            if self.message is not None:
+                try:
+                    await self.message.edit(view=self)
+                except discord.HTTPException:
+                    pass
+
+        return callback
+
+    async def on_timeout(self) -> None:
+        for item in self.children:
+            item.disabled = True
         if self.message is not None:
             try:
                 await self.message.edit(view=self)
@@ -601,10 +760,30 @@ class Rolls(commands.Cog):
         description="Tire un animal au hasard à sauver !",
         extras={"hidden_params": ["group"]},
     )
-    @app_commands.describe(group="Roll spécial : le milestone dans lequel tirer (à débloquer au /shop)")
-    async def rescue(self, ctx: commands.Context, *, group: str | None = None):
+    @app_commands.describe(
+        count=f"Nombre de rolls d'un coup (1 à {MAX_MULTI_ROLLS})",
+        group="Roll spécial : le milestone dans lequel tirer (à débloquer au /shop)",
+    )
+    async def rescue(
+        self,
+        ctx: commands.Context,
+        count: app_commands.Range[int, 1, MAX_MULTI_ROLLS] | None = None,
+        *,
+        group: str | None = None,
+    ):
+        # On the prefix side everything lands in `group` (!rc 5): read the
+        # number from it. The slash option is already range-checked.
+        if count is None and group is not None and group.strip().isdigit():
+            count, group = int(group), None
+            if not 1 <= count <= MAX_MULTI_ROLLS:
+                await ctx.send(f"Tu peux faire entre 1 et {MAX_MULTI_ROLLS} rolls d'un coup.")
+                return
+        count = count or 1
         if group is None or ctx.invoked_with == "rc":
-            await self._roll(ctx)
+            await self._roll(ctx, count=count)
+            return
+        if count > 1:
+            await ctx.send("Le roll spécial se fait un par un.")
             return
         needle = _fold(group)
         special = next((m for m in milestones.MILESTONES if _fold(m.label) == needle), None)
@@ -623,27 +802,34 @@ class Rolls(commands.Cog):
             if needle in _fold(m.label)
         ][:25]
 
-    async def _roll(self, ctx: commands.Context, special: milestones.Milestone | None = None) -> None:
-        """A roll: a regular one (/rescue), or the daily special roll among
-        the animals of the `special` milestone (/rescue <groupe>). Both work the
-        same once the animal is picked: points, wishes, rescue button."""
+    async def _roll(self, ctx: commands.Context, special: milestones.Milestone | None = None, count: int = 1) -> None:
+        """`count` rolls at once: regular ones (/rescue, /rescue 5), or the
+        daily special roll among the animals of the `special` milestone
+        (/rescue <groupe>, always one). All work the same once the animal is
+        picked: points, wishes, rescue button. Several rolls are listed in one
+        message whose numbered buttons each open a regular roll card."""
         if ctx.guild is None:
             await ctx.send("Utilise cette commande dans un serveur.")
             return
         await ctx.defer()
 
+        rolled: list[RolledAnimal] = []
         async with SessionLocal() as session:
             # Rescued animals stay rollable, and rescuable again.
             animals = list((await session.execute(select(Animal))).scalars().all())
             pool = [a for a in animals if special.includes(a)] if special else animals
-            # The roll doesn't change them; read before so the bonus is known.
+            # The rolls don't change them; read before so the bonus is known.
             species = await rescued_species(session, ctx.guild.id, ctx.author.id)
+            reached = milestones.completed(species, animals)
             # An empty pool (seed never run) mustn't cost a roll.
             status = None
-            if pool:
-                consume = consume_special_roll if special else consume_roll
-                status = await consume(session, ctx.guild.id, ctx.author.id)
-            if status is not None:
+            consume = consume_special_roll if special else consume_roll
+            for _ in range(count if pool else 0):
+                # Stops at the first refusal: as many rolls as are left.
+                current = await consume(session, ctx.guild.id, ctx.author.id)
+                if current is None:
+                    break
+                status = current
                 # Locked tiers stay locked in a special roll too; the luck
                 # odds apply among the milestone's tiers.
                 animal = _weighted_pick(pool, rarity_odds(status.luck_level))
@@ -664,33 +850,35 @@ class Rolls(commands.Cog):
                 )
                 # Every roll pays its rarity's points, in the same transaction
                 # as the roll it was spent on.
-                reached = milestones.completed(species, animals)
                 points = milestone_points(RARITY_POINTS[animal.rarity], len(reached))
                 await add_points(session, ctx.guild.id, ctx.author.id, points)
+                rolled.append(RolledAnimal(animal, appeal, points))
             await session.commit()
-            if status is not None:
+            for roll in rolled:
                 # The roller's own copies of this animal, best appeal first.
-                owned = list(
+                roll.owned = list(
                     (
                         await session.execute(
                             select(Rescue.appeal)
                             .where(
                                 Rescue.guild_id == ctx.guild.id,
                                 Rescue.user_id == ctx.author.id,
-                                Rescue.animal_id == animal.id,
+                                Rescue.animal_id == roll.animal.id,
                             )
                             .order_by(Rescue.appeal.desc())
                         )
                     ).scalars()
                 )
-                wishers = list(
+                roll.wishers = list(
                     (
                         await session.execute(
-                            select(Wish.user_id).where(Wish.guild_id == ctx.guild.id, Wish.animal_id == animal.id)
+                            select(Wish.user_id).where(
+                                Wish.guild_id == ctx.guild.id, Wish.animal_id == roll.animal.id
+                            )
                         )
                     ).scalars()
                 )
-                collection_wishers = await _collection_wishers(session, ctx.guild.id, animal)
+                roll.collection_wishers = await _collection_wishers(session, ctx.guild.id, roll.animal)
 
         if not pool:
             await ctx.send("Il n'y a encore aucun animal ! Lance `python -m bot.seed`.")
@@ -712,73 +900,54 @@ class Rolls(commands.Cog):
             )
             return
 
-        embed = animal_embed(animal, full=False)
-        milestone = milestones.milestone_of(animal)
-        if milestone is not None:
-            embed.title = f"{milestone.badge} {embed.title}"
-        embed.add_field(
-            name="Aura",
-            value=f"{format_appeal(appeal)} · {reserve_income(animal.rarity, appeal)} {CURRENCY_NAME}/h comme animal-totem",
-            inline=False,
-        )
-        # The collection groups this animal counts for, with the roller's
-        # progress in each (✓ once complete).
-        add_collections_field(embed, animal, species)
-        if owned:
-            copies = "\n".join(format_appeal(a) for a in owned[:MAX_COPIES_SHOWN])
-            if len(owned) > MAX_COPIES_SHOWN:
-                copies += f"\n+{len(owned) - MAX_COPIES_SHOWN} autres"
-            embed.add_field(
-                name=f"Déjà dans ta réserve (×{len(owned)})",
-                value=copies,
-                inline=False,
-            )
-        view = RescueView(animal, ctx.guild.id, appeal, ctx.author.id)
+        total = sum(r.points for r in rolled)
         if special is not None:
             counters = (
-                f"-# Roll spécial · {special.badge} {special.label} · +{points} {CURRENCY_NAME}"
+                f"-# Roll spécial · {special.badge} {special.label} · +{total} {CURRENCY_NAME}"
                 f" · {status.special_rolls_left}/{status.special_roll} rolls spéciaux restants"
             )
         else:
-            counters = f"-# +{points} {CURRENCY_NAME} · {status.rolls_left}/{status.max_rolls} rolls restants"
+            counters = f"-# +{total} {CURRENCY_NAME} · {status.rolls_left}/{status.max_rolls} rolls restants"
             if status.bonus_rolls:
                 counters += f" (+{status.bonus_rolls} bonus)"
         counters += f" · {status.claims}/{status.max_claims} claims"
         if status.bonus_claims:
             counters += f" (+{status.bonus_claims} bonus)"
-        # Players who wished for this animal (/wish add), or for a collection
-        # it's missing from (/wish add Collection : …), get pinged, except the
-        # roller, who's already looking at it. A player on both lists is
-        # pinged once, on the animal line.
-        others = [u for u in wishers if u != ctx.author.id]
-        collectors = [u for u in collection_wishers if u != ctx.author.id and u not in wishers]
-        lines = []
-        if others:
-            lines.append(f"⭐ Souhaité par {' '.join(f'<@{u}>' for u in others)}")
-        if collectors:
-            lines.append(
-                "Manque à la collection de "
-                + ", ".join(f"<@{u}> ({', '.join(collection_wishers[u])})" for u in collectors)
+
+        if len(rolled) == 1:
+            roll = rolled[0]
+            view = RescueView(roll.animal, ctx.guild.id, roll.appeal, ctx.author.id)
+            lines, pinged = _wish_lines(roll, ctx.author.id, view.protected_until)
+            view.message = await ctx.send(
+                "\n".join([*lines, counters]),
+                embed=roll_embed(roll, species),
+                view=view,
+                allowed_mentions=discord.AllowedMentions(users=[discord.Object(u) for u in pinged]),
             )
-        if lines:
-            lines[0] += f" · sauvetage possible <t:{view.protected_until}:R>"
-        if ctx.author.id in collection_wishers:
-            lines.insert(0, f"Nouveau pour ta collection {', '.join(collection_wishers[ctx.author.id])} !")
-        if ctx.author.id in wishers:
-            lines.insert(0, "⭐ Dans ta wishlist !")
-        content = "\n".join([*lines, counters])
-        pinged = [*others, *collectors]
+            return
+
+        view = MultiRollView(rolled, species, ctx.guild.id, ctx.author)
+        if len(rolled) < count:
+            counters += f" · plus assez de rolls : {len(rolled)} sur {count}"
+        # Wishers are pinged here, once per animal; the cards opened from the
+        # buttons show the same lines without pinging again.
+        content, pinged = [], []
+        for index, roll in enumerate(rolled, 1):
+            lines, users = _wish_lines(roll, ctx.author.id, view.protected_until)
+            content += [f"**{index}.** {line}" for line in lines]
+            pinged += [u for u in users if u not in pinged]
         view.message = await ctx.send(
-            content,
-            embed=embed,
+            "\n".join([*content, counters]),
+            embed=multi_roll_embed(rolled, ctx.author),
             view=view,
             allowed_mentions=discord.AllowedMentions(users=[discord.Object(u) for u in pinged]),
         )
 
     @app_commands.command(name="rc", description="Raccourci pour /rescue.")
-    async def rc(self, interaction: discord.Interaction):
+    @app_commands.describe(count=f"Nombre de rolls d'un coup (1 à {MAX_MULTI_ROLLS})")
+    async def rc(self, interaction: discord.Interaction, count: app_commands.Range[int, 1, MAX_MULTI_ROLLS] = 1):
         ctx = await commands.Context.from_interaction(interaction)
-        await self.rescue.callback(self, ctx)
+        await self.rescue.callback(self, ctx, count)
 
     @commands.hybrid_command(name="reserve", description="Affiche ta réserve (ou celle d'un joueur) : les animaux sauvés.")
     @app_commands.describe(member="Le joueur dont voir la réserve (toi par défaut)")
