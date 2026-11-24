@@ -149,7 +149,7 @@ def shop_embed(status: PlayerStatus) -> discord.Embed:
         + " parmi les animaux du milestone de ton choix (`/rescue <groupe>`), en plus de tes rolls habituels.",
     )
     fields["multi"] = (
-        f"🟤 Roll multiple — {_cost(status, 'multi')}",
+        f"⚫ Roll multiple — {_cost(status, 'multi')}",
         f"{'Débloqué' if status.multi_roll else 'Débloque'} `/rc <nombre>` : jusqu'à {MAX_MULTI_ROLLS} rolls d'un coup, "
         "listés dans un seul message avec un bouton par animal.",
     )
@@ -247,7 +247,7 @@ class ShopView(discord.ui.View):
     async def special(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._buy(interaction, "special")
 
-    @discord.ui.button(emoji="🟤", label="Roll multiple", style=discord.ButtonStyle.primary)
+    @discord.ui.button(emoji="⚫", label="Roll multiple", style=discord.ButtonStyle.primary)
     async def multi(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._buy(interaction, "multi")
 

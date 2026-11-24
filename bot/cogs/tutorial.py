@@ -93,7 +93,7 @@ def _pages() -> list[discord.Embed]:
             "· 🔺 **Place de totem** : un totem de plus.\n"
             "· 🟨 **Stock de claims** : garde plus de claims d'avance.\n"
             "· 🟣 **Aura** : de meilleures auras sur tes rolls.\n"
-            f"· 🟤 **Roll multiple** : `/rc {MAX_MULTI_ROLLS}` fait jusqu'à {MAX_MULTI_ROLLS} rolls d'un coup, "
+            f"· ⚫ **Roll multiple** : `/rc {MAX_MULTI_ROLLS}` fait jusqu'à {MAX_MULTI_ROLLS} rolls d'un coup, "
             "chaque bouton numéroté affiche l'animal pour le sauver.\n\n"
             "Certaines améliorations n'apparaissent qu'une fois que tu as assez de "
             f"{CURRENCY_NAME} pour les acheter. `/balance` résume tes {CURRENCY_NAME}, rolls et claims.",
