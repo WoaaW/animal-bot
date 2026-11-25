@@ -226,6 +226,24 @@ def add_collections_field(embed: discord.Embed, animal: Animal, species: list[An
         embed.add_field(name="Collections", value="\n".join(lines), inline=False)
 
 
+def add_copies_field(embed: discord.Embed, animal: Animal, copies: list[tuple[int, bool]]) -> None:
+    """The player's copies of `animal`, as (appeal, is a totem), grouped by
+    appeal, best first: one line per appeal at most, so it can't overflow."""
+    if not copies:
+        embed.add_field(name="Dans ta réserve", value="Tu n'en as aucun.", inline=False)
+        return
+    lines = []
+    for appeal in sorted({a for a, _ in copies}, reverse=True):
+        count = sum(1 for a, _ in copies if a == appeal)
+        totems = sum(1 for a, totem in copies if a == appeal and totem)
+        line = f"{format_appeal(appeal)}" + (f" ×{count}" if count > 1 else "")
+        line += f" · {reserve_income(animal.rarity, appeal)} {CURRENCY_NAME}/h en totem"
+        if totems:
+            line += f" · 🔺 {'totem' if totems == 1 else f'{totems} totems'}"
+        lines.append(line)
+    embed.add_field(name=f"Dans ta réserve (×{len(copies)})", value="\n".join(lines), inline=False)
+
+
 async def _collection_wishers(session, guild_id: int, animal: Animal) -> dict[int, list[str]]:
     """Players who wished for a collection `animal` counts for and don't own
     it yet, with those collections' labels (in COLLECTIONS order). Lives here
@@ -1182,18 +1200,34 @@ class Rolls(commands.Cog):
             animals = (await session.execute(select(Animal))).scalars().all()
             # The invoker's progress in each collection, like on a roll.
             species = None
+            # Autocomplete sends the exact name, but "!info panda roux" is typed
+            # by hand, so match case- and accent-insensitively.
+            needle = _fold(animal)
+            found = next((a for a in animals if _fold(a.name) == needle), None)
+            copies: list[tuple[int, bool]] = []
             if ctx.guild is not None:
                 species = await rescued_species(session, ctx.guild.id, ctx.author.id)
-        # Autocomplete sends the exact name, but "!info panda roux" is typed
-        # by hand, so match case- and accent-insensitively.
-        needle = _fold(animal)
-        found = next((a for a in animals if _fold(a.name) == needle), None)
+                if found is not None:
+                    # The invoker's copies: (appeal, is a totem).
+                    copies = list(
+                        (
+                            await session.execute(
+                                select(Rescue.appeal, Rescue.in_reserve).where(
+                                    Rescue.guild_id == ctx.guild.id,
+                                    Rescue.user_id == ctx.author.id,
+                                    Rescue.animal_id == found.id,
+                                )
+                            )
+                        ).tuples()
+                    )
 
         if found is None:
             await ctx.send(f"Aucun animal ne s'appelle « {animal} ».")
             return
         embed = animal_embed(found, full=True)
         add_collections_field(embed, found, species)
+        if ctx.guild is not None:
+            add_copies_field(embed, found, copies)
         await ctx.send(embed=embed)
 
     @info.autocomplete("animal")
