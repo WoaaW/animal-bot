@@ -771,8 +771,8 @@ class Rolls(commands.Cog):
     # ctx.defer() just shows "typing…" and ephemeral=True is ignored.
     # Hybrid aliases only cover the prefix side: /rc is registered below.
     # The optional group makes it the daily special roll (a shop unlock),
-    # among that milestone's animals. Kept out of /help on purpose
-    # (hidden_params); /rc and !rc only do regular rolls.
+    # among that milestone's animals, from /rc and !rc too. Kept out of /help
+    # on purpose (hidden_params).
     @commands.hybrid_command(
         name="rescue",
         aliases=["rc"],
@@ -806,7 +806,7 @@ class Rolls(commands.Cog):
                     f"Le roll multiple se débloque dans le `/shop` ({upgrade_price('multi', 0)} {CURRENCY_NAME})."
                 )
                 return
-        if group is None or ctx.invoked_with == "rc":
+        if group is None:
             await self._roll(ctx, count=count)
             return
         if count > 1:
@@ -970,11 +970,25 @@ class Rolls(commands.Cog):
             allowed_mentions=discord.AllowedMentions(users=[discord.Object(u) for u in pinged]),
         )
 
-    @app_commands.command(name="rc", description="Raccourci pour /rescue.")
-    @app_commands.describe(count=f"Nombre de rolls d'un coup (1 à {MAX_MULTI_ROLLS})")
-    async def rc(self, interaction: discord.Interaction, count: app_commands.Range[int, 1, MAX_MULTI_ROLLS] = 1):
+    @app_commands.command(
+        name="rc", description="Raccourci pour /rescue.", extras={"hidden_params": ["group"]}
+    )
+    @app_commands.describe(
+        count=f"Nombre de rolls d'un coup (1 à {MAX_MULTI_ROLLS})",
+        group="Roll spécial : le milestone dans lequel tirer (à débloquer au /shop)",
+    )
+    async def rc(
+        self,
+        interaction: discord.Interaction,
+        count: app_commands.Range[int, 1, MAX_MULTI_ROLLS] = 1,
+        group: str | None = None,
+    ):
         ctx = await commands.Context.from_interaction(interaction)
-        await self.rescue.callback(self, ctx, count)
+        await self.rescue.callback(self, ctx, count, group=group)
+
+    @rc.autocomplete("group")
+    async def rc_group_autocomplete(self, interaction: discord.Interaction, current: str):
+        return await self.rescue_group_autocomplete(interaction, current)
 
     @commands.hybrid_command(name="reserve", description="Affiche ta réserve (ou celle d'un joueur) : les animaux sauvés.")
     @app_commands.describe(member="Le joueur dont voir la réserve (toi par défaut)")
